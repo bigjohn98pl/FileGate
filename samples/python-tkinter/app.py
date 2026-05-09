@@ -292,6 +292,63 @@ def compute_access_flags(dialog_type: str, values: list[str]) -> tuple[bool, boo
     return False, False
 
 
+def validate_selection_count(
+    scenario: dict[str, Any],
+    case_payload: dict[str, Any],
+    selection: SelectionResult,
+) -> list[dict[str, str]]:
+    expectation = scenario.get("expectation", {})
+    case_id = case_payload["id"]
+
+    exact_count = expectation.get("expected_selection_count")
+    min_count = expectation.get("min_selection_count")
+    max_count = expectation.get("max_selection_count")
+
+    if exact_count is None:
+        if case_id == "open_file_single":
+            exact_count = 1
+        elif case_id == "open_file_multiple":
+            min_count = 2 if min_count is None else min_count
+
+    actual_count = len(selection.values)
+    issues: list[dict[str, str]] = []
+
+    if exact_count is not None and actual_count != int(exact_count):
+        issues.append(
+            {
+                "code": "SELECTION_COUNT_MISMATCH",
+                "message": (
+                    f"Scenario expected exactly {int(exact_count)} selected path(s), "
+                    f"but received {actual_count}."
+                ),
+            }
+        )
+
+    if min_count is not None and actual_count < int(min_count):
+        issues.append(
+            {
+                "code": "SELECTION_COUNT_TOO_LOW",
+                "message": (
+                    f"Scenario expected at least {int(min_count)} selected path(s), "
+                    f"but received {actual_count}."
+                ),
+            }
+        )
+
+    if max_count is not None and actual_count > int(max_count):
+        issues.append(
+            {
+                "code": "SELECTION_COUNT_TOO_HIGH",
+                "message": (
+                    f"Scenario expected at most {int(max_count)} selected path(s), "
+                    f"but received {actual_count}."
+                ),
+            }
+        )
+
+    return issues
+
+
 def build_result_payload(
     scenario: dict[str, Any],
     case_payload: dict[str, Any],
@@ -349,6 +406,9 @@ def build_result_payload(
             "notes": notes,
         }
 
+    selection_count_issues = validate_selection_count(scenario, case_payload, selection)
+    notes.extend(selection_count_issues)
+
     if cancel_expected:
         notes.append(
             {
@@ -356,6 +416,8 @@ def build_result_payload(
                 "message": "A resource was selected even though the scenario expected a cancel action.",
             }
         )
+        status = "fail"
+    elif selection_count_issues:
         status = "fail"
     else:
         status = "pass"

@@ -139,6 +139,15 @@ Supported fields:
 ### `expectation`
 
 - `cancel_is_expected` — boolean; useful for cancel-specific cases
+- `expected_selection_count` — optional exact number of selected paths expected
+- `min_selection_count` — optional minimum number of selected paths expected
+- `max_selection_count` — optional maximum number of selected paths expected
+
+Default selection-count behavior:
+
+- `open_file_single` expects exactly 1 selected path
+- `open_file_multiple` expects at least 2 selected paths
+- other supported cases do not enforce a selection count unless the scenario sets one explicitly
 
 ### `simulation`
 
@@ -182,6 +191,7 @@ The output JSON always includes the required top-level keys:
 Result mapping notes:
 
 - Successful selection returns `result.status = "pass"`.
+- Selection-count mismatches return `result.status = "fail"` with a diagnostic note.
 - Expected cancellation returns `result.status = "pass"` and `result.error_code = "USER_CANCELLED"`.
 - Unexpected cancellation returns `result.status = "fail"` and `result.error_code = "USER_CANCELLED"`.
 - Headless or unavailable Tk backends return `result.status = "unsupported"` or `fail` with an explanatory error code.
