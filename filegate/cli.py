@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+import json
+
 import click
 
 from filegate import __version__
+from filegate.environment import detect_environment
 
 
 @click.group(
@@ -18,7 +21,8 @@ def main() -> None:
 @main.command()
 def doctor() -> None:
     """Inspect the local environment required to run FileGate."""
-    click.echo("Environment doctor is not implemented yet.")
+    report = detect_environment()
+    click.echo(json.dumps(report.to_dict(), indent=2, sort_keys=True))
 
 
 @main.command(name="list-cases")
