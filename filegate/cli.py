@@ -10,6 +10,7 @@ import click
 from filegate import __version__
 from filegate.cases import DEFAULT_CASE_REGISTRY
 from filegate.environment import detect_environment
+from filegate.reporting import render_html_report, render_json_report, render_markdown_report
 from filegate.runner import RunRequest, Runner, build_target_from_command
 
 
@@ -91,9 +92,42 @@ def run(
 
 
 @main.command()
-def report() -> None:
+@click.option(
+    "--run-dir",
+    required=True,
+    type=click.Path(exists=True, path_type=Path, file_okay=False, dir_okay=True),
+    help="Path to a FileGate run directory containing run-summary.json.",
+)
+@click.option(
+    "--format",
+    "report_format",
+    required=True,
+    type=click.Choice(["json", "markdown", "html"], case_sensitive=False),
+    help="Report output format.",
+)
+@click.option(
+    "--output",
+    type=click.Path(path_type=Path, dir_okay=False),
+    default=None,
+    help="Optional output file path. Defaults to stdout when omitted.",
+)
+def report(run_dir: Path, report_format: str, output: Path | None) -> None:
     """Generate reports from a FileGate run result."""
-    click.echo("Report generation is not implemented yet.")
+    normalized_format = report_format.lower()
+    if normalized_format == "json":
+        content = render_json_report(run_dir)
+    elif normalized_format == "markdown":
+        content = render_markdown_report(run_dir)
+    else:
+        content = render_html_report(run_dir)
+
+    if output is None:
+        click.echo(content, nl=False)
+        return
+
+    output.parent.mkdir(parents=True, exist_ok=True)
+    output.write_text(content, encoding="utf-8")
+    click.echo(f"Report written: {output}")
 
 
 if __name__ == "__main__":
