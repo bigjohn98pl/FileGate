@@ -1,0 +1,36 @@
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "filegate"
+version = "0.1.0"
+description = "Cross-platform file access conformance toolkit"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "Apache License 2.0" }
+authors = [
+  { name = "Janusz Zychal" },
+  { name = "FileGate contributors" }
+]
+dependencies = [
+  "click>=8.1,<9",
+]
+keywords = ["cli", "conformance", "file-dialog", "tooling"]
+classifiers = [
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "License :: OSI Approved :: Apache Software License",
+  "Operating System :: OS Independent",
+  "Environment :: Console",
+]
+
+[project.scripts]
+filegate = "filegate.cli:main"
+
+[tool.setuptools]
+include-package-data = false
+
+[tool.setuptools.packages.find]
+include = ["filegate*"]
