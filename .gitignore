@@ -6,6 +6,10 @@ __pycache__/
 # C extensions
 *.so
 
+# FileGate task/runtime artifacts
+runs/
+samples/electron/node_modules/
+
 # Distribution / packaging
 .Python
 build/

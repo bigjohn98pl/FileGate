@@ -1,0 +1,472 @@
+const { app, BrowserWindow, dialog } = require("electron");
+const fs = require("fs");
+const os = require("os");
+const path = require("path");
+
+const SCHEMA_VERSION = "0.1";
+const SAMPLE_APP_PATH = "samples/electron";
+const TARGET_NAME = "electron";
+const RESULT_STATUSES = new Set([
+  "pass",
+  "fail",
+  "warn",
+  "skip",
+  "manual_required",
+  "unsupported",
+  "timeout",
+  "blocked",
+  "inconclusive",
+]);
+
+const CASE_DEFAULTS = {
+  open_file_single: { name: "Open file single", automation_level: "semi_automatic", dialog_type: "open_file" },
+  open_file_multiple: { name: "Open file multiple", automation_level: "semi_automatic", dialog_type: "open_files" },
+  open_folder: { name: "Open folder", automation_level: "semi_automatic", dialog_type: "open_folder" },
+  save_file_new: { name: "Save file new", automation_level: "semi_automatic", dialog_type: "save_file" },
+  save_file_overwrite: { name: "Save file overwrite", automation_level: "semi_automatic", dialog_type: "save_file" },
+  cancel_open_dialog: { name: "Cancel open dialog", automation_level: "semi_automatic", dialog_type: "open_file", cancel_expected: true },
+  cancel_save_dialog: { name: "Cancel save dialog", automation_level: "semi_automatic", dialog_type: "save_file", cancel_expected: true },
+};
+
+function parseArgs(argv) {
+  const args = { scenario: null, output: null };
+  for (let index = 0; index < argv.length; index += 1) {
+    const current = argv[index];
+    if (current === "--scenario") {
+      args.scenario = argv[index + 1] || null;
+      index += 1;
+    } else if (current === "--output") {
+      args.output = argv[index + 1] || null;
+      index += 1;
+    }
+  }
+  if (!args.scenario) {
+    throw new Error("Missing required --scenario argument.");
+  }
+  return args;
+}
+
+function loadJson(filePath) {
+  return JSON.parse(fs.readFileSync(filePath, "utf8"));
+}
+
+function ensureCase(casePayload) {
+  const caseId = casePayload && casePayload.id;
+  if (!caseId) {
+    throw new Error("Scenario must define case.id.");
+  }
+  const defaults = CASE_DEFAULTS[caseId] || {};
+  return {
+    id: caseId,
+    name: casePayload.name || defaults.name || caseId,
+    automation_level: casePayload.automation_level || defaults.automation_level || "semi_automatic",
+  };
+}
+
+function inferDialogType(scenario, casePayload) {
+  if (scenario.dialog && scenario.dialog.type) {
+    return String(scenario.dialog.type);
+  }
+  const defaults = CASE_DEFAULTS[casePayload.id] || {};
+  if (defaults.dialog_type) {
+    return String(defaults.dialog_type);
+  }
+  throw new Error("Scenario must define dialog.type or use a known case.id.");
+}
+
+function resolveOutputPath(baseDir, caseId, cliOutput) {
+  if (cliOutput) {
+    return path.resolve(cliOutput);
+  }
+  return path.resolve(baseDir, "out", `${caseId}.result.json`);
+}
+
+function detectSandbox() {
+  if (process.env.FLATPAK_ID) {
+    return "flatpak";
+  }
+  if (process.env.SNAP) {
+    return "snap";
+  }
+  if (process.env.APPIMAGE) {
+    return "appimage";
+  }
+  return "none";
+}
+
+function buildPlatformPayload(scenario) {
+  const incoming = scenario.platform || {};
+  return {
+    os: incoming.os || process.platform,
+    distribution: incoming.distribution || process.env.XDG_CURRENT_DESKTOP || os.type(),
+    version: incoming.version || os.release(),
+    desktop_environment: incoming.desktop_environment || process.env.XDG_CURRENT_DESKTOP || "unknown",
+    session_type: incoming.session_type || process.env.XDG_SESSION_TYPE || "unknown",
+    sandbox: incoming.sandbox || detectSandbox(),
+  };
+}
+
+function buildTargetPayload() {
+  return {
+    name: TARGET_NAME,
+    version: process.versions.electron || "unknown",
+    sample_app: SAMPLE_APP_PATH,
+  };
+}
+
+function normalizeFileTypes(fileTypes) {
+  if (!Array.isArray(fileTypes) || fileTypes.length === 0) {
+    return [];
+  }
+  return fileTypes.map((item) => {
+    if (!Array.isArray(item) || item.length < 2) {
+      throw new Error("dialog.filetypes entries must be [label, pattern] pairs.");
+    }
+    return {
+      name: String(item[0]),
+      extensions: String(item[1])
+        .split(";")
+        .map((value) => value.trim().replace(/^\*\./, "").replace(/^\./, ""))
+        .filter(Boolean),
+    };
+  });
+}
+
+function executeSimulation(simulation, dialogType) {
+  if (simulation.cancel) {
+    return { values: [], cancelled: true, returned_resource_type: "unknown", notes: [] };
+  }
+  const selectedValues = dialogType === "open_files"
+    ? (simulation.selected_paths || [])
+    : (simulation.selected_path ? [simulation.selected_path] : []);
+  const values = selectedValues.filter(Boolean).map((value) => String(value));
+  return { values, cancelled: values.length === 0, returned_resource_type: values.length ? "path" : "unknown", notes: [] };
+}
+
+function buildOpenDialogOptions(scenario, dialogType) {
+  const dialogPayload = scenario.dialog || {};
+  const properties = [];
+  if (dialogType === "open_file") {
+    properties.push("openFile");
+  } else if (dialogType === "open_files") {
+    properties.push("openFile", "multiSelections");
+  } else if (dialogType === "open_folder") {
+    properties.push("openDirectory");
+  }
+  if (dialogPayload.mustexist !== false) {
+    properties.push("dontAddToRecent");
+  }
+  const options = {
+    title: dialogPayload.title,
+    defaultPath: dialogPayload.initialdir || dialogPayload.initialfile,
+    properties,
+  };
+  const filters = normalizeFileTypes(dialogPayload.filetypes);
+  if (filters.length > 0) {
+    options.filters = filters;
+  }
+  return options;
+}
+
+function buildSaveDialogOptions(scenario) {
+  const dialogPayload = scenario.dialog || {};
+  const defaultName = dialogPayload.initialfile || "output.txt";
+  const defaultPath = dialogPayload.initialdir
+    ? path.join(dialogPayload.initialdir, defaultName)
+    : defaultName;
+  const options = {
+    title: dialogPayload.title,
+    defaultPath,
+  };
+  const filters = normalizeFileTypes(dialogPayload.filetypes);
+  if (filters.length > 0) {
+    options.filters = filters;
+  }
+  if (dialogPayload.defaultextension) {
+    options.defaultPath = options.defaultPath.endsWith(dialogPayload.defaultextension)
+      ? options.defaultPath
+      : `${options.defaultPath}${dialogPayload.defaultextension}`;
+  }
+  return options;
+}
+
+async function executeSelection(mainWindow, scenario, dialogType) {
+  const simulation = scenario.simulation || {};
+  if (simulation.enabled) {
+    const selection = executeSimulation(simulation, dialogType);
+    selection.notes.push({
+      code: "SIMULATED",
+      message: "Result was produced using the documented simulation mode rather than an interactive Electron dialog.",
+    });
+    return selection;
+  }
+
+  if (dialogType === "save_file") {
+    const response = await dialog.showSaveDialog(mainWindow, buildSaveDialogOptions(scenario));
+    const filePath = response.filePath ? [response.filePath] : [];
+    return {
+      values: filePath,
+      cancelled: Boolean(response.canceled),
+      returned_resource_type: filePath.length ? "path" : "unknown",
+      notes: [],
+    };
+  }
+
+  const response = await dialog.showOpenDialog(mainWindow, buildOpenDialogOptions(scenario, dialogType));
+  return {
+    values: (response.filePaths || []).map((value) => String(value)),
+    cancelled: Boolean(response.canceled),
+    returned_resource_type: (response.filePaths || []).length ? "path" : "unknown",
+    notes: [],
+  };
+}
+
+function computeAccessFlags(dialogType, values) {
+  if (!values.length) {
+    return { can_read: false, can_write: false };
+  }
+  if (dialogType === "open_files") {
+    return {
+      can_read: values.every((value) => canAccess(value, fs.constants.R_OK)),
+      can_write: false,
+    };
+  }
+  const value = values[0];
+  if (dialogType === "open_file" || dialogType === "open_folder") {
+    return {
+      can_read: canAccess(value, fs.constants.R_OK),
+      can_write: canAccess(value, fs.constants.W_OK),
+    };
+  }
+  if (dialogType === "save_file") {
+    if (fs.existsSync(value)) {
+      return {
+        can_read: canAccess(value, fs.constants.R_OK),
+        can_write: canAccess(value, fs.constants.W_OK),
+      };
+    }
+    return {
+      can_read: false,
+      can_write: canAccess(path.dirname(value), fs.constants.W_OK),
+    };
+  }
+  return { can_read: false, can_write: false };
+}
+
+function canAccess(targetPath, mode) {
+  try {
+    fs.accessSync(targetPath, mode);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function validateSelectionCount(scenario, casePayload, selection) {
+  const expectation = scenario.expectation || {};
+  let exactCount = expectation.expected_selection_count;
+  let minCount = expectation.min_selection_count;
+  let maxCount = expectation.max_selection_count;
+
+  if (exactCount == null) {
+    if (casePayload.id === "open_file_single") {
+      exactCount = 1;
+    } else if (casePayload.id === "open_file_multiple" && minCount == null) {
+      minCount = 2;
+    }
+  }
+
+  const issues = [];
+  const actualCount = selection.values.length;
+  if (exactCount != null && actualCount !== Number(exactCount)) {
+    issues.push({
+      code: "SELECTION_COUNT_MISMATCH",
+      message: `Scenario expected exactly ${Number(exactCount)} selected path(s), but received ${actualCount}.`,
+    });
+  }
+  if (minCount != null && actualCount < Number(minCount)) {
+    issues.push({
+      code: "SELECTION_COUNT_TOO_LOW",
+      message: `Scenario expected at least ${Number(minCount)} selected path(s), but received ${actualCount}.`,
+    });
+  }
+  if (maxCount != null && actualCount > Number(maxCount)) {
+    issues.push({
+      code: "SELECTION_COUNT_TOO_HIGH",
+      message: `Scenario expected at most ${Number(maxCount)} selected path(s), but received ${actualCount}.`,
+    });
+  }
+  return issues;
+}
+
+function classifyErrorCode(error) {
+  const message = String(error.message || error).toLowerCase();
+  if (message.includes("display") || message.includes("window")) {
+    return "RESOURCE_UNAVAILABLE";
+  }
+  return "UNKNOWN_ERROR";
+}
+
+function buildResultPayload(scenario, casePayload, dialogType, selection, durationMs, error) {
+  const expectation = scenario.expectation || {};
+  const caseDefaults = CASE_DEFAULTS[casePayload.id] || {};
+  const cancelExpected = Boolean(expectation.cancel_is_expected || caseDefaults.cancel_expected);
+  const notes = [...(selection ? selection.notes : [])];
+
+  if (error) {
+    notes.push({ code: "EXECUTION_ERROR", message: String(error.message || error) });
+    return {
+      status: "unsupported",
+      duration_ms: durationMs,
+      returned_resource_type: "unknown",
+      returned_value_example: null,
+      can_read: false,
+      can_write: false,
+      error_code: classifyErrorCode(error),
+      notes,
+    };
+  }
+
+  if (selection.cancelled) {
+    notes.push({ code: "USER_CANCELLED", message: "The dialog was cancelled and no resource was returned." });
+    return {
+      status: cancelExpected ? "pass" : "fail",
+      duration_ms: durationMs,
+      returned_resource_type: selection.returned_resource_type,
+      returned_value_example: null,
+      can_read: false,
+      can_write: false,
+      error_code: "USER_CANCELLED",
+      notes,
+    };
+  }
+
+  const selectionCountIssues = validateSelectionCount(scenario, casePayload, selection);
+  notes.push(...selectionCountIssues);
+
+  if (!scenario.simulation?.enabled) {
+    notes.push({
+      code: "NATIVE_DIALOG_BEHAVIOR",
+      message: "Electron native dialog behavior may vary by platform or desktop environment; compare notes before treating differences as regressions.",
+    });
+  }
+
+  if (cancelExpected) {
+    notes.push({
+      code: "UNEXPECTED_SELECTION",
+      message: "A resource was selected even though the scenario expected a cancel action.",
+    });
+  }
+
+  const status = cancelExpected || selectionCountIssues.length > 0 ? "fail" : "pass";
+  const access = computeAccessFlags(dialogType, selection.values);
+  return {
+    status,
+    duration_ms: durationMs,
+    returned_resource_type: selection.returned_resource_type,
+    returned_value_example: dialogType === "open_files" ? selection.values : selection.values[0],
+    can_read: access.can_read,
+    can_write: access.can_write,
+    error_code: null,
+    notes,
+  };
+}
+
+function validateResultPayload(payload) {
+  for (const field of ["schema_version", "run_id", "platform", "target", "case", "result"]) {
+    if (!(field in payload)) {
+      throw new Error(`Result payload missing top-level field '${field}'.`);
+    }
+  }
+  for (const field of ["id", "automation_level"]) {
+    if (!(field in payload.case)) {
+      throw new Error(`Result payload missing case.${field}.`);
+    }
+  }
+  for (const field of ["status", "duration_ms", "returned_resource_type"]) {
+    if (!(field in payload.result)) {
+      throw new Error(`Result payload missing result.${field}.`);
+    }
+  }
+  if (!RESULT_STATUSES.has(payload.result.status)) {
+    throw new Error(`Unsupported result.status '${payload.result.status}'.`);
+  }
+  if (!Number.isInteger(payload.result.duration_ms) || payload.result.duration_ms < 0) {
+    throw new Error("result.duration_ms must be a non-negative integer.");
+  }
+}
+
+function generateRunId() {
+  const timestamp = new Date().toISOString().replace(/:/g, "-").replace(/\.\d+Z$/, "Z");
+  const desktop = (process.env.XDG_CURRENT_DESKTOP || "unknown").toLowerCase().replace(/\s+/g, "-");
+  return `${timestamp}-${process.platform}-${desktop}-${TARGET_NAME}`;
+}
+
+function createWindow() {
+  const window = new BrowserWindow({
+    width: 640,
+    height: 480,
+    show: false,
+    webPreferences: {
+      preload: path.join(__dirname, "preload.js"),
+      contextIsolation: true,
+      nodeIntegration: false,
+    },
+  });
+  window.loadFile(path.join(__dirname, "renderer.html")).catch(() => {
+    window.loadURL("data:text/html,<html><body><p>FileGate Electron sample</p><script src='renderer.js'></script></body></html>");
+  });
+  return window;
+}
+
+async function main() {
+  const args = parseArgs(process.argv.slice(1));
+  const scenarioPath = path.resolve(args.scenario);
+  const baseDir = __dirname;
+  const scenario = loadJson(scenarioPath);
+  const casePayload = ensureCase(scenario.case || {});
+  const dialogType = inferDialogType(scenario, casePayload);
+  const outputPath = resolveOutputPath(baseDir, casePayload.id, args.output);
+  fs.mkdirSync(path.dirname(outputPath), { recursive: true });
+
+  let mainWindow = null;
+  const started = Date.now();
+  let selection = { values: [], cancelled: true, returned_resource_type: "unknown", notes: [] };
+  let executionError = null;
+
+  try {
+    await app.whenReady();
+    mainWindow = createWindow();
+    selection = await executeSelection(mainWindow, scenario, dialogType);
+  } catch (error) {
+    executionError = error;
+  }
+
+  const resultPayload = {
+    schema_version: SCHEMA_VERSION,
+    run_id: scenario.run_id || generateRunId(),
+    platform: buildPlatformPayload(scenario),
+    target: buildTargetPayload(),
+    case: casePayload,
+    result: buildResultPayload(
+      scenario,
+      casePayload,
+      dialogType,
+      selection,
+      Math.max(0, Date.now() - started),
+      executionError,
+    ),
+  };
+
+  validateResultPayload(resultPayload);
+  fs.writeFileSync(outputPath, `${JSON.stringify(resultPayload, null, 2)}\n`, "utf8");
+  process.stdout.write(`${outputPath}\n`);
+
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.destroy();
+  }
+  await app.quit();
+  process.exit(resultPayload.result.status === "pass" || resultPayload.result.status === "warn" || resultPayload.result.status === "manual_required" ? 0 : 1);
+}
+
+main();
