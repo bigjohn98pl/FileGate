@@ -25,6 +25,14 @@ from typing import Any, Iterable, Mapping
 
 AUTOMATION_LEVELS = {"automatic", "semi_automatic", "manual"}
 FIXTURE_KINDS = {"file", "directory", "symlink"}
+ORCHESTRATION_MODES = {
+    "single",
+    "repeat_dialog",
+    "restart_dialog",
+    "restart_probe",
+    "revocation_probe",
+    "timeout_observation",
+}
 
 
 @dataclass(frozen=True, slots=True)
@@ -169,6 +177,7 @@ class CaseDefinition:
     extensions: Mapping[str, Any] = field(default_factory=dict)
     scenario_builder_id: str = "dialog_selection"
     default_timeout_seconds: float = 10.0
+    orchestration: str = "single"
 
     def __post_init__(self) -> None:
         if self.automation_level not in AUTOMATION_LEVELS:
@@ -177,6 +186,10 @@ class CaseDefinition:
             )
         if not self.scenario_builder_id.strip():
             raise ValueError("scenario_builder_id must be a non-empty string.")
+        if self.orchestration not in ORCHESTRATION_MODES:
+            raise ValueError(
+                f"Unsupported orchestration mode for {self.case_id}: {self.orchestration}"
+            )
 
     def to_case_payload(self) -> dict[str, str]:
         return {
@@ -614,6 +627,164 @@ MVP_CASES: tuple[CaseDefinition, ...] = (
                 "requires_write_access": True,
             },
         ),
+    ),
+    CaseDefinition(
+        case_id="open_dialog_multiple_times",
+        name="Open dialog multiple times",
+        automation_level="semi_automatic",
+        objective="Verify that repeated dialog use remains stable across back-to-back invocations.",
+        preconditions=("Target executable is available.",),
+        steps=(
+            "Run the dialog open scenario twice in sequence.",
+            "Collect both returned resources and compare the observed behavior.",
+        ),
+        expected_result="Both dialog invocations complete without stale state, crashes, or schema regressions.",
+        artifacts=(
+            "scenario_json",
+            "result_json",
+            "stdout_log",
+            "stderr_log",
+            "step_result_json",
+        ),
+        dialog=DialogSpec(dialog_type="open_file"),
+        simulation=SimulationSpec(
+            fixtures=(
+                SimulationFixtureSpec(
+                    fixture_id="selected_file",
+                    relative_path="repeat-selection.txt",
+                    role="selection",
+                    content="FileGate repeat dialog fixture\n",
+                ),
+            ),
+        ),
+        family="stability_persistence",
+        tags=("stability_persistence", "open", "repeat"),
+        extensions=_extension_contract(
+            path={"expected_resource_kind": "file", "selection_mode": "single"},
+            persistence={"expectation": "not_evaluated"},
+        ),
+        scenario_builder_id="multi_step",
+        orchestration="repeat_dialog",
+    ),
+    CaseDefinition(
+        case_id="open_after_app_restart",
+        name="Open after app restart",
+        automation_level="semi_automatic",
+        objective="Verify that the target can open the same dialog flow again after a full app restart.",
+        preconditions=("Target executable is available.",),
+        steps=(
+            "Run the dialog scenario once and collect the returned resource.",
+            "Restart the target application and run the dialog scenario again.",
+            "Compare the post-restart observation with the initial run.",
+        ),
+        expected_result="The dialog works again after restart and the post-restart run is recorded explicitly.",
+        artifacts=(
+            "scenario_json",
+            "result_json",
+            "stdout_log",
+            "stderr_log",
+            "step_result_json",
+        ),
+        dialog=DialogSpec(dialog_type="open_file"),
+        family="stability_persistence",
+        tags=("stability_persistence", "open", "restart"),
+        extensions=_extension_contract(
+            path={"expected_resource_kind": "file", "selection_mode": "single"},
+            persistence={"expectation": "not_evaluated"},
+        ),
+        scenario_builder_id="multi_step",
+        orchestration="restart_dialog",
+    ),
+    CaseDefinition(
+        case_id="persistent_access_after_restart",
+        name="Persistent access after restart",
+        automation_level="semi_automatic",
+        objective="Observe whether access to a previously selected resource remains available after target restart.",
+        preconditions=("Target executable is available.",),
+        steps=(
+            "Select a resource and record the returned value and access flags.",
+            "Restart the target.",
+            "Probe the previously selected resource after restart and record the observation.",
+        ),
+        expected_result="Persistence behavior after restart is encoded explicitly in status and notes.",
+        artifacts=(
+            "scenario_json",
+            "result_json",
+            "stdout_log",
+            "stderr_log",
+            "step_result_json",
+        ),
+        dialog=DialogSpec(dialog_type="open_file"),
+        family="stability_persistence",
+        tags=("stability_persistence", "open", "persistence", "restart"),
+        extensions=_extension_contract(
+            path={"expected_resource_kind": "file", "selection_mode": "single"},
+            persistence={"expectation": "explicit_observation"},
+        ),
+        scenario_builder_id="multi_step",
+        orchestration="restart_probe",
+    ),
+    CaseDefinition(
+        case_id="revoked_access_behavior",
+        name="Revoked access behavior",
+        automation_level="manual",
+        objective="Record how access revocation is surfaced after a previously granted resource becomes unavailable.",
+        preconditions=(
+            "Target executable is available.",
+            "A revocation mechanism or controlled test fixture is available.",
+        ),
+        steps=(
+            "Select a resource and confirm initial access.",
+            "Revoke or remove the granted resource.",
+            "Probe the previously selected resource and record the revocation observation.",
+        ),
+        expected_result="Revocation behavior is encoded explicitly without overstating automation coverage.",
+        artifacts=(
+            "scenario_json",
+            "result_json",
+            "stdout_log",
+            "stderr_log",
+            "step_result_json",
+        ),
+        dialog=DialogSpec(dialog_type="open_file"),
+        family="stability_persistence",
+        tags=("stability_persistence", "open", "revocation", "manual"),
+        extensions=_extension_contract(
+            path={"expected_resource_kind": "file", "selection_mode": "single"},
+            persistence={"expectation": "revocation_observation"},
+        ),
+        scenario_builder_id="multi_step",
+        orchestration="revocation_probe",
+    ),
+    CaseDefinition(
+        case_id="timeout_when_dialog_not_closed",
+        name="Timeout when dialog not closed",
+        automation_level="semi_automatic",
+        objective="Verify that runner timeout semantics are captured when a dialog remains open past the configured deadline.",
+        preconditions=("Target executable is available.",),
+        steps=(
+            "Launch the dialog scenario.",
+            "Do not close the dialog before the timeout expires.",
+            "Record the runner-managed timeout result.",
+        ),
+        expected_result="The run records an explicit timeout status with structured notes.",
+        artifacts=(
+            "scenario_json",
+            "result_json",
+            "stdout_log",
+            "stderr_log",
+            "step_result_json",
+        ),
+        dialog=DialogSpec(dialog_type="open_file"),
+        family="stability_persistence",
+        tags=("stability_persistence", "open", "timeout"),
+        extensions=_extension_contract(
+            path={"expected_resource_kind": "file", "selection_mode": "single"},
+            persistence={"expectation": "not_evaluated"},
+        ),
+        scenario_builder_id="multi_step",
+        default_timeout_seconds=1.0,
+        orchestration="timeout_observation",
     ),
 )
 

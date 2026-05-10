@@ -31,6 +31,11 @@ const CASE_DEFAULTS = {
   save_file_overwrite: { name: "Save file overwrite", automation_level: "semi_automatic", dialog_type: "save_file" },
   cancel_open_dialog: { name: "Cancel open dialog", automation_level: "semi_automatic", dialog_type: "open_file", cancel_expected: true },
   cancel_save_dialog: { name: "Cancel save dialog", automation_level: "semi_automatic", dialog_type: "save_file", cancel_expected: true },
+  open_dialog_multiple_times: { name: "Open dialog multiple times", automation_level: "semi_automatic", dialog_type: "open_file" },
+  open_after_app_restart: { name: "Open after app restart", automation_level: "semi_automatic", dialog_type: "open_file" },
+  persistent_access_after_restart: { name: "Persistent access after restart", automation_level: "semi_automatic", dialog_type: "open_file" },
+  revoked_access_behavior: { name: "Revoked access behavior", automation_level: "manual", dialog_type: "open_file" },
+  timeout_when_dialog_not_closed: { name: "Timeout when dialog not closed", automation_level: "semi_automatic", dialog_type: "open_file" },
 };
 
 function parseArgs(argv) {
@@ -146,8 +151,18 @@ function normalizeFileTypes(fileTypes) {
 }
 
 function executeSimulation(simulation, dialogType) {
+  if (simulation.sleep_before_result_seconds != null) {
+    const waitUntil = Date.now() + Number(simulation.sleep_before_result_seconds) * 1000;
+    while (Date.now() < waitUntil) {
+      // Busy-wait is acceptable here because it is only used in deterministic timeout simulation.
+    }
+  }
+
   if (simulation.cancel) {
     return { values: [], cancelled: true, returned_resource_type: "unknown", notes: [] };
+  }
+  if (dialogType === "probe_resource") {
+    return executeProbeSimulation(simulation);
   }
   const selectedValues = dialogType === "open_files"
     ? (simulation.selected_paths || [])
@@ -161,6 +176,24 @@ function executeSimulation(simulation, dialogType) {
     });
   }
   return { values, cancelled: values.length === 0, returned_resource_type: values.length ? "path" : "unknown", notes };
+}
+
+function executeProbeSimulation(simulation) {
+  const probePath = simulation.probe_path ? String(simulation.probe_path) : "";
+  if (!probePath) {
+    return { values: [], cancelled: true, returned_resource_type: "unknown", notes: [] };
+  }
+  fs.mkdirSync(path.dirname(probePath), { recursive: true });
+  if (simulation.revoke_access) {
+    if (fs.existsSync(probePath)) {
+      fs.unlinkSync(probePath);
+    }
+    return { values: [probePath], cancelled: false, returned_resource_type: "path", notes: [] };
+  }
+  if (simulation.persisted_access && !fs.existsSync(probePath)) {
+    fs.writeFileSync(probePath, "FileGate persisted access fixture\n", "utf8");
+  }
+  return { values: [probePath], cancelled: false, returned_resource_type: "path", notes: [] };
 }
 
 function buildOpenDialogOptions(scenario, dialogType) {
@@ -221,6 +254,10 @@ async function executeSelection(mainWindow, scenario, dialogType) {
     return selection;
   }
 
+  if (dialogType === "probe_resource") {
+    throw new Error("Interactive probe_resource mode is not implemented for the Electron sample target.");
+  }
+
   if (dialogType === "save_file") {
     const response = await dialog.showSaveDialog(mainWindow, buildSaveDialogOptions(scenario));
     const filePath = response.filePath ? [response.filePath] : [];
@@ -252,7 +289,7 @@ function computeAccessFlags(dialogType, values) {
     };
   }
   const value = values[0];
-  if (dialogType === "open_file" || dialogType === "open_folder") {
+  if (dialogType === "open_file" || dialogType === "open_folder" || dialogType === "probe_resource") {
     return {
       can_read: canAccess(value, fs.constants.R_OK),
       can_write: canAccess(value, fs.constants.W_OK),
@@ -467,6 +504,46 @@ function buildResultPayload(scenario, casePayload, dialogType, selection, durati
       error_code: "USER_CANCELLED",
       notes,
     };
+  }
+
+  const access = computeAccessFlags(dialogType, selection.values);
+  if (dialogType === "probe_resource" && selection.values.length > 0) {
+    if (scenario.expectation?.persistence_case) {
+      notes.push({
+        code: "PERSISTENCE_PROBE",
+        message: "This result records direct post-restart probing of the previously selected resource.",
+      });
+      if (!access.can_read && !access.can_write) {
+        return {
+          status: "warn",
+          duration_ms: durationMs,
+          returned_resource_type: selection.returned_resource_type,
+          returned_value_example: selection.values[0],
+          can_read: access.can_read,
+          can_write: access.can_write,
+          error_code: "PERSISTENCE_DENIED",
+          notes,
+        };
+      }
+    }
+    if (scenario.expectation?.revocation_case) {
+      notes.push({
+        code: "REVOCATION_PROBE",
+        message: "This result records direct probing after access revocation or resource removal.",
+      });
+      if (!access.can_read && !access.can_write) {
+        return {
+          status: "manual_required",
+          duration_ms: durationMs,
+          returned_resource_type: selection.returned_resource_type,
+          returned_value_example: selection.values[0],
+          can_read: access.can_read,
+          can_write: access.can_write,
+          error_code: "ACCESS_REVOKED",
+          notes,
+        };
+      }
+    }
   }
 
   const selectionCountIssues = validateSelectionCount(scenario, casePayload, selection);
