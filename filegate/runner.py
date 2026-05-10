@@ -1,7 +1,12 @@
-"""Core runner flow for FileGate MVP."""
+"""Core runner flow for FileGate.
+
+The runner intentionally separates case metadata from scenario construction so
+the case catalog can grow without adding per-case branches to execution flow.
+"""
 
 from __future__ import annotations
 
+from collections.abc import Callable, Mapping
 from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime
 import json
@@ -19,7 +24,12 @@ from filegate.artifact_validation import (
     validate_run_summary_consistency,
     validate_run_summary_payload,
 )
-from filegate.cases import CaseDefinition, CaseRegistry, DEFAULT_CASE_REGISTRY
+from filegate.cases import (
+    CaseDefinition,
+    CaseRegistry,
+    DEFAULT_CASE_REGISTRY,
+    SimulationFixtureSpec,
+)
 from filegate.environment import PlatformMetadata, detect_platform_metadata
 
 SCHEMA_VERSION = "0.1"
@@ -80,11 +90,41 @@ class RunSummary:
     summary_path: Path
 
 
+@dataclass(slots=True)
+class PreparedFixture:
+    """Materialized simulation fixture with absolute path metadata."""
+
+    spec: SimulationFixtureSpec
+    absolute_path: Path
+
+    def to_payload(self) -> dict[str, Any]:
+        payload = self.spec.to_contract_payload()
+        payload["absolute_path"] = str(self.absolute_path)
+        return payload
+
+
+@dataclass(slots=True)
+class ScenarioContext:
+    """Inputs shared by scenario builders."""
+
+    case: CaseDefinition
+    run_id: str
+    platform_metadata: PlatformMetadata
+    simulation_root: Path
+    simulation_enabled: bool
+
+
+ScenarioBuilder = Callable[[ScenarioContext], dict[str, Any]]
+
+
 class Runner:
     """Execute selected FileGate cases and persist normalized artifacts."""
 
     def __init__(self, case_registry: CaseRegistry = DEFAULT_CASE_REGISTRY) -> None:
         self._case_registry = case_registry
+        self._scenario_builders: dict[str, ScenarioBuilder] = {
+            "dialog_selection": self._build_dialog_selection_scenario,
+        }
 
     def run(self, request: RunRequest) -> RunSummary:
         run_id = request.run_id or _generate_run_id(request.target.name)
@@ -168,7 +208,7 @@ class Runner:
             case=case,
             run_id=run_id,
             platform_metadata=platform_metadata,
-            simulation_root=request.simulation_root or case_dir / "simulation",
+            simulation_root=(request.simulation_root or case_dir / "simulation").resolve(),
             simulation_enabled=simulation_enabled,
         )
         scenario_path.write_text(
@@ -255,49 +295,143 @@ class Runner:
         simulation_root: Path,
         simulation_enabled: bool,
     ) -> dict[str, Any]:
-        if simulation_enabled:
-            simulation_root.mkdir(parents=True, exist_ok=True)
-        payload: dict[str, Any] = {
-            "run_id": run_id,
-            "platform": asdict(platform_metadata),
+        context = ScenarioContext(
+            case=case,
+            run_id=run_id,
+            platform_metadata=platform_metadata,
+            simulation_root=simulation_root,
+            simulation_enabled=simulation_enabled,
+        )
+        builder = self._scenario_builders.get(case.scenario_builder_id)
+        if builder is None:
+            available = ", ".join(sorted(self._scenario_builders))
+            raise ValueError(
+                f"Unknown scenario builder '{case.scenario_builder_id}' for case '{case.case_id}'. "
+                f"Available builders: {available}"
+            )
+        return builder(context)
+
+    def register_scenario_builder(self, builder_id: str, builder: ScenarioBuilder) -> None:
+        """Register a reusable scenario builder for future case families."""
+
+        normalized = builder_id.strip()
+        if not normalized:
+            raise ValueError("builder_id must be a non-empty string.")
+        self._scenario_builders[normalized] = builder
+
+    def _build_dialog_selection_scenario(self, context: ScenarioContext) -> dict[str, Any]:
+        case = context.case
+        prepared_fixtures = self._prepare_simulation_fixtures(context)
+        simulation_payload = self._build_simulation_payload(
+            case=case,
+            prepared_fixtures=prepared_fixtures,
+            simulation_enabled=context.simulation_enabled,
+        )
+
+        return {
+            "run_id": context.run_id,
+            "platform": asdict(context.platform_metadata),
             "case": case.to_case_payload(),
-            "dialog": {
-                "type": case.dialog_type,
-                "title": case.name,
+            "dialog": case.dialog.to_payload(fallback_title=case.name),
+            "expectation": case.expectation.to_payload(),
+            "simulation": simulation_payload,
+            "fixtures": {
+                "root": str(context.simulation_root),
+                "items": [fixture.to_payload() for fixture in prepared_fixtures],
             },
-            "expectation": {
-                "cancel_is_expected": case.cancel_is_expected,
+            "extensions": self._build_extension_payload(case.extensions),
+            "scenario_contract": {
+                "builder_id": case.scenario_builder_id,
+                "family": case.family,
+                "tags": list(case.tags),
+                "target_notes": [
+                    "Targets should treat dialog, expectation, simulation, and extensions as the stable scenario contract.",
+                    "Avoid inferring semantics from case.id when a dedicated contract section provides the same information.",
+                ],
             },
-            "simulation": {
-                "enabled": simulation_enabled,
-            },
+        }
+
+    def _prepare_simulation_fixtures(self, context: ScenarioContext) -> list[PreparedFixture]:
+        if not context.simulation_enabled:
+            return []
+
+        context.simulation_root.mkdir(parents=True, exist_ok=True)
+        prepared: list[PreparedFixture] = []
+        for fixture_spec in context.case.simulation.fixtures:
+            absolute_path = context.simulation_root / fixture_spec.relative_path
+            self._materialize_fixture(fixture_spec, absolute_path)
+            prepared.append(PreparedFixture(spec=fixture_spec, absolute_path=absolute_path))
+        return prepared
+
+    def _materialize_fixture(self, fixture_spec: SimulationFixtureSpec, absolute_path: Path) -> None:
+        absolute_path.parent.mkdir(parents=True, exist_ok=True)
+        if fixture_spec.kind == "directory":
+            if fixture_spec.materialize:
+                absolute_path.mkdir(parents=True, exist_ok=True)
+        elif fixture_spec.kind == "file":
+            if fixture_spec.materialize:
+                absolute_path.write_text(fixture_spec.content or "", encoding="utf-8")
+        elif fixture_spec.kind == "symlink":
+            if fixture_spec.materialize:
+                target = fixture_spec.symlink_target
+                if target is None:
+                    raise ValueError(
+                        f"Fixture '{fixture_spec.fixture_id}' requires symlink_target for kind='symlink'."
+                    )
+                if absolute_path.exists() or absolute_path.is_symlink():
+                    absolute_path.unlink()
+                absolute_path.symlink_to(target)
+        else:  # pragma: no cover
+            raise ValueError(f"Unsupported fixture kind '{fixture_spec.kind}'.")
+
+        if fixture_spec.permissions is not None and fixture_spec.materialize:
+            try:
+                absolute_path.chmod(fixture_spec.permissions)
+            except FileNotFoundError:
+                pass
+
+    def _build_simulation_payload(
+        self,
+        *,
+        case: CaseDefinition,
+        prepared_fixtures: list[PreparedFixture],
+        simulation_enabled: bool,
+    ) -> dict[str, Any]:
+        payload = {
+            "enabled": simulation_enabled,
+            **case.simulation.to_contract_payload(),
         }
 
         if not simulation_enabled:
             return payload
 
-        if case.case_id == "open_file_single":
-            file_path = simulation_root / "single.txt"
-            file_path.write_text("FileGate single selection fixture\n", encoding="utf-8")
-            payload["simulation"]["selected_path"] = str(file_path)
-            payload["expectation"]["expected_selection_count"] = 1
-        elif case.case_id == "open_file_multiple":
-            file_a = simulation_root / "multi-a.txt"
-            file_b = simulation_root / "multi-b.txt"
-            file_a.write_text("A\n", encoding="utf-8")
-            file_b.write_text("B\n", encoding="utf-8")
-            payload["simulation"]["selected_paths"] = [str(file_a), str(file_b)]
-            payload["expectation"]["min_selection_count"] = 2
-        elif case.case_id == "open_folder":
-            folder_path = simulation_root / "selected-folder"
-            folder_path.mkdir(exist_ok=True)
-            payload["simulation"]["selected_path"] = str(folder_path)
-        elif case.case_id == "save_file_new":
-            payload["simulation"]["selected_path"] = str(simulation_root / "saved-output.txt")
-        elif case.cancel_is_expected:
-            payload["simulation"]["cancel"] = True
+        selection_paths = [
+            str(prepared.absolute_path)
+            for prepared in prepared_fixtures
+            if prepared.spec.is_selection_fixture
+        ]
+        if case.dialog_type == "open_files":
+            if selection_paths:
+                payload["selected_paths"] = selection_paths
+        elif selection_paths:
+            payload["selected_path"] = selection_paths[0]
 
         return payload
+
+    def _build_extension_payload(self, extensions: Mapping[str, Any]) -> dict[str, Any]:
+        default_sections = {
+            "path": {},
+            "filters": {},
+            "permissions": {},
+            "persistence": {},
+        }
+        normalized = {section: dict(value) for section, value in default_sections.items()}
+        for section_name, payload in dict(extensions).items():
+            if isinstance(payload, Mapping):
+                normalized[section_name] = dict(payload)
+            else:
+                normalized[section_name] = {"value": payload}
+        return normalized
 
     def _invoke_target(
         self,
@@ -461,18 +595,21 @@ class Runner:
                 ],
             )
 
+        reported_target = payload.get("target")
         expected_target = {
             "name": target.name,
-            "version": target.version,
             "sample_app": target.sample_app,
         }
-        if payload.get("target") != expected_target:
+        if not isinstance(reported_target, dict) or {
+            "name": reported_target.get("name"),
+            "sample_app": reported_target.get("sample_app"),
+        } != expected_target:
             raise ArtifactValidationError(
                 "case result artifact",
                 result_path,
                 [
-                    "target block must match the invoked target configuration. "
-                    f"Expected {expected_target}, got {payload.get('target')}."
+                    "target block must match the invoked target identity for name and sample_app. "
+                    f"Expected {expected_target}, got {reported_target}."
                 ],
             )
 
