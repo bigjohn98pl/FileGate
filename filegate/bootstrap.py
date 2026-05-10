@@ -21,6 +21,8 @@ def prepare_target(target_id: str, repo_root: Path | None = None) -> Preparation
 
     if normalized == "electron":
         return _prepare_electron(root)
+    if normalized == "python-gtk":
+        return _prepare_python_gtk(root)
     if normalized == "python-tkinter":
         return _prepare_python_tkinter(root)
 
@@ -29,6 +31,7 @@ def prepare_target(target_id: str, repo_root: Path | None = None) -> Preparation
 
 def prepare_all_targets(repo_root: Path | None = None) -> list[PreparationResult]:
     return [
+        prepare_target("python-gtk", repo_root=repo_root),
         prepare_target("python-tkinter", repo_root=repo_root),
         prepare_target("electron", repo_root=repo_root),
     ]
@@ -46,6 +49,30 @@ def _prepare_python_tkinter(root: Path) -> PreparationResult:
     if completed.stderr.strip():
         details.append(completed.stderr.strip())
     return PreparationResult("python-tkinter", "failed", details)
+
+
+def _prepare_python_gtk(root: Path) -> PreparationResult:
+    details: list[str] = []
+    command = [
+        "python3",
+        "-c",
+        (
+            "import gi; "
+            "gi.require_version('Gtk', '4.0'); "
+            "from gi.repository import Gtk; "
+            "print(f'gtk4-ok:{Gtk.get_major_version()}.{Gtk.get_minor_version()}.{Gtk.get_micro_version()}')"
+        ),
+    ]
+    completed = subprocess.run(command, cwd=root, capture_output=True, text=True)
+    if completed.returncode == 0:
+        version_output = completed.stdout.strip() or "gtk4-ok"
+        details.append(f"GTK import check passed ({version_output}).")
+        return PreparationResult("python-gtk", "ready", details)
+
+    details.append("GTK import check failed.")
+    if completed.stderr.strip():
+        details.append(completed.stderr.strip())
+    return PreparationResult("python-gtk", "failed", details)
 
 
 def _prepare_electron(root: Path) -> PreparationResult:

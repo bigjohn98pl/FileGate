@@ -22,6 +22,7 @@ The broader documentation in `docs/` describes a larger planned conformance surf
 
 - Python `3.11+`
 - `pip` for installing the package locally
+- For the bundled GTK sample: PyGObject / `gi` with GTK 4 bindings
 - For the bundled Electron sample: Node.js and npm
 - For interactive desktop dialog testing: a graphical desktop session compatible with your target app
 
@@ -150,6 +151,7 @@ filegate list-targets
 Example output:
 
 ```text
+python-gtk      Bundled Python GTK 4 sample target.
 python-tkinter  Bundled Python Tkinter sample target.
 electron        Bundled Electron sample target.
 ```
@@ -166,6 +168,7 @@ Or prepare only one target:
 
 ```bash
 filegate prepare-target electron
+filegate prepare-target python-gtk
 filegate prepare-target python-tkinter
 ```
 
@@ -186,6 +189,12 @@ Run the bundled Tkinter sample:
 
 ```bash
 filegate run python-tkinter --mode interactive --output-dir runs
+```
+
+Run the bundled GTK sample:
+
+```bash
+filegate run python-gtk --mode interactive --output-dir runs
 ```
 
 Run the bundled Electron sample:
@@ -242,6 +251,11 @@ filegate run \
 #### Example: run a custom command-compatible target
 
 This repository includes `samples/python-tkinter/app.py`, which follows the required target contract.
+
+The same contract is also implemented by:
+
+- `samples/python-gtk/app.py`
+- `samples/electron/main.js`
 
 ```bash
 filegate run \
