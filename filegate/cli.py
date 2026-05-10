@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime
 from pathlib import Path
 
 import click
 
 from filegate import __version__
+from filegate.bootstrap import prepare_all_targets, prepare_target
 from filegate.cases import DEFAULT_CASE_REGISTRY
 from filegate.environment import detect_environment
 from filegate.reporting import (
@@ -21,6 +23,8 @@ from filegate.reporting import (
 from filegate.runner import RunRequest, Runner, build_target_from_command
 from filegate.targets import build_preset_target, list_preset_targets
 
+SAMPLE_TARGET_IDS = ("electron", "python-tkinter")
+
 
 @click.group(
     context_settings={"help_option_names": ["-h", "--help"]},
@@ -30,7 +34,7 @@ def main() -> None:
     """FileGate CLI for diagnostics, case discovery, execution, and reporting."""
 
 
-@main.command()
+@main.command(name="doctor")
 def doctor() -> None:
     """Inspect the local environment required to run FileGate."""
     report = detect_environment()
@@ -140,6 +144,39 @@ def list_targets() -> None:
         click.echo(f"{target['id']}\t{target['description']}")
 
 
+@main.command(name="prepare-target")
+@click.argument("target")
+def prepare_target_command(target: str) -> None:
+    """Prepare and validate one bundled sample target environment."""
+    try:
+        result = prepare_target(target)
+    except KeyError as exc:
+        raise click.ClickException(str(exc)) from exc
+
+    click.echo(f"[{result.target_id}] {result.status}")
+    for detail in result.details:
+        click.echo(f"- {detail}")
+
+    if result.status != "ready":
+        raise click.ClickException(f"Target '{result.target_id}' is not ready.")
+
+
+@main.command(name="prepare-samples")
+def prepare_samples_command() -> None:
+    """Prepare and validate all bundled sample target environments."""
+    results = prepare_all_targets()
+    has_failure = False
+    for result in results:
+        click.echo(f"[{result.target_id}] {result.status}")
+        for detail in result.details:
+            click.echo(f"- {detail}")
+        if result.status != "ready":
+            has_failure = True
+
+    if has_failure:
+        raise click.ClickException("One or more sample targets are not ready.")
+
+
 @main.command()
 @click.option(
     "--run-dir",
@@ -182,15 +219,31 @@ def report(run_dir: Path, report_format: str, output: Path | None) -> None:
 @main.command(name="compare-runs")
 @click.option(
     "--left-run-dir",
-    required=True,
+    required=False,
     type=click.Path(exists=True, path_type=Path, file_okay=False, dir_okay=True),
     help="Path to the left FileGate run directory containing run-summary.json.",
 )
 @click.option(
     "--right-run-dir",
-    required=True,
+    required=False,
     type=click.Path(exists=True, path_type=Path, file_okay=False, dir_okay=True),
     help="Path to the right FileGate run directory containing run-summary.json.",
+)
+@click.option(
+    "--latest-samples",
+    is_flag=True,
+    default=False,
+    help=(
+        "Automatically compare the most recent runs for bundled sample targets "
+        "'electron' and 'python-tkinter'."
+    ),
+)
+@click.option(
+    "--runs-root",
+    type=click.Path(path_type=Path, file_okay=False, dir_okay=True),
+    default="runs",
+    show_default=True,
+    help="Root directory containing run subdirectories used by --latest-samples.",
 )
 @click.option(
     "--format",
@@ -206,12 +259,26 @@ def report(run_dir: Path, report_format: str, output: Path | None) -> None:
     help="Optional output file path. Defaults to stdout when omitted.",
 )
 def compare_runs(
-    left_run_dir: Path,
-    right_run_dir: Path,
+    left_run_dir: Path | None,
+    right_run_dir: Path | None,
+    latest_samples: bool,
+    runs_root: Path,
     report_format: str,
     output: Path | None,
 ) -> None:
     """Generate a side-by-side comparison report for two FileGate runs."""
+    if latest_samples:
+        if left_run_dir or right_run_dir:
+            raise click.ClickException(
+                "Do not pass --left-run-dir/--right-run-dir when using --latest-samples."
+            )
+        left_run_dir, right_run_dir = _resolve_latest_sample_runs(runs_root)
+    else:
+        if left_run_dir is None or right_run_dir is None:
+            raise click.ClickException(
+                "Either pass both --left-run-dir and --right-run-dir, or use --latest-samples."
+            )
+
     normalized_format = report_format.lower()
     if normalized_format == "json":
         content = render_comparison_json_report(left_run_dir, right_run_dir)
@@ -227,6 +294,67 @@ def compare_runs(
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(content, encoding="utf-8")
     click.echo(f"Comparison report written: {output}")
+
+
+def _resolve_latest_sample_runs(runs_root: Path) -> tuple[Path, Path]:
+    normalized_runs_root = runs_root.expanduser().resolve()
+    if not normalized_runs_root.exists():
+        raise click.ClickException(f"Runs root does not exist: {normalized_runs_root}")
+
+    latest_by_target: dict[str, tuple[datetime, Path]] = {}
+    for run_dir in normalized_runs_root.iterdir():
+        if not run_dir.is_dir():
+            continue
+        summary_path = run_dir / "run-summary.json"
+        if not summary_path.exists():
+            continue
+
+        try:
+            summary_payload = json.loads(summary_path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            continue
+
+        target_name = str((summary_payload.get("target") or {}).get("name") or "").strip().lower()
+        if target_name not in SAMPLE_TARGET_IDS:
+            continue
+
+        generated_at_raw = str(summary_payload.get("generated_at") or "").strip()
+        generated_at = _parse_generated_at(generated_at_raw)
+        if generated_at is None:
+            continue
+
+        previous = latest_by_target.get(target_name)
+        if previous is None or generated_at > previous[0]:
+            latest_by_target[target_name] = (generated_at, run_dir)
+
+    missing_targets = [target for target in SAMPLE_TARGET_IDS if target not in latest_by_target]
+    if missing_targets:
+        raise click.ClickException(
+            "Could not find sample runs for: "
+            + ", ".join(missing_targets)
+            + f" under {normalized_runs_root}"
+        )
+
+    return latest_by_target["electron"][1], latest_by_target["python-tkinter"][1]
+
+
+def _parse_generated_at(value: str) -> datetime | None:
+    if not value:
+        return None
+    try:
+        return datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+
+
+main.add_command(doctor, name="doc")
+main.add_command(list_cases, name="lc")
+main.add_command(list_targets, name="lt")
+main.add_command(prepare_target_command, name="pt")
+main.add_command(prepare_samples_command, name="ps")
+main.add_command(run, name="r")
+main.add_command(report, name="rep")
+main.add_command(compare_runs, name="cr")
 
 
 if __name__ == "__main__":
