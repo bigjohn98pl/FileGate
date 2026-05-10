@@ -444,6 +444,15 @@ This is useful for comparing:
 - The `run` command only works with targets that accept FileGate's `--scenario` and `--output` arguments and emit compatible result JSON.
 - Sample targets support both simulation and interactive modes. Use `--mode interactive` when you want to manually interact with native dialogs, and `--mode simulation` for deterministic/headless validation.
 
+## Artifact validation and compatibility
+
+- FileGate now validates per-case `result.json` artifacts explicitly against the documented rules from [`docs/result-schema.md`](docs/result-schema.md).
+- Validation is enforced in two places:
+  - during `filegate run`, before a case result or `run-summary.json` is accepted as part of a completed run,
+  - during `filegate report` and `filegate compare-runs`, before artifacts are loaded into downstream reports.
+- Invalid required fields, unsupported `status` / `returned_resource_type` / `error_code` values, and run-summary/result mismatches now fail with actionable errors instead of being silently normalized.
+- Run-summary compatibility note: FileGate prefers the canonical in-run result location `<run-dir>/<case-id>/result.json`. If an older summary stores `result_path` relative to a project root, reporting falls back to that serialized path only when needed. This keeps old sample runs readable while making the canonical layout explicit for new runs.
+
 ## Documentation
 
 This project uses documentation as the primary source of truth before implementation.

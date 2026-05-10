@@ -9,6 +9,7 @@ from pathlib import Path
 import click
 
 from filegate import __version__
+from filegate.artifact_validation import ArtifactValidationError
 from filegate.bootstrap import prepare_all_targets, prepare_target
 from filegate.cases import DEFAULT_CASE_REGISTRY
 from filegate.environment import detect_environment
@@ -92,43 +93,47 @@ def run(
     working_directory: Path | None,
 ) -> None:
     """Execute a FileGate run against a preset target or custom target command."""
-    if target:
-        if any(value is not None for value in (target_name, target_command, sample_app, working_directory)):
-            raise click.ClickException(
-                "When positional TARGET is provided, do not pass --target-name/--target-command/--sample-app/--working-directory."
+    try:
+        if target:
+            if any(value is not None for value in (target_name, target_command, sample_app, working_directory)):
+                raise click.ClickException(
+                    "When positional TARGET is provided, do not pass --target-name/--target-command/--sample-app/--working-directory."
+                )
+            resolved_target = build_preset_target(target)
+        else:
+            missing = [
+                option_name
+                for option_name, option_value in (
+                    ("--target-name", target_name),
+                    ("--target-command", target_command),
+                    ("--sample-app", sample_app),
+                )
+                if not option_value
+            ]
+            if missing:
+                raise click.ClickException(
+                    "Custom mode requires all of: --target-name, --target-command, --sample-app. "
+                    f"Missing: {', '.join(missing)}"
+                )
+            resolved_target = build_target_from_command(
+                name=str(target_name),
+                command=str(target_command),
+                sample_app=str(sample_app),
+                working_directory=str(working_directory) if working_directory else None,
             )
-        resolved_target = build_preset_target(target)
-    else:
-        missing = [
-            option_name
-            for option_name, option_value in (
-                ("--target-name", target_name),
-                ("--target-command", target_command),
-                ("--sample-app", sample_app),
-            )
-            if not option_value
-        ]
-        if missing:
-            raise click.ClickException(
-                "Custom mode requires all of: --target-name, --target-command, --sample-app. "
-                f"Missing: {', '.join(missing)}"
-            )
-        resolved_target = build_target_from_command(
-            name=str(target_name),
-            command=str(target_command),
-            sample_app=str(sample_app),
-            working_directory=str(working_directory) if working_directory else None,
-        )
 
-    summary = Runner().run(
-        RunRequest(
-            target=resolved_target,
-            output_dir=output_dir,
-            case_ids=list(case_ids) or None,
-            timeout_seconds=timeout_seconds,
-            execution_mode=execution_mode.lower(),
+        summary = Runner().run(
+            RunRequest(
+                target=resolved_target,
+                output_dir=output_dir,
+                case_ids=list(case_ids) or None,
+                timeout_seconds=timeout_seconds,
+                execution_mode=execution_mode.lower(),
+            )
         )
-    )
+    except ArtifactValidationError as exc:
+        raise click.ClickException(str(exc)) from exc
+
     click.echo(f"Run completed: {summary.run_id}")
     click.echo(f"Summary: {summary.summary_path}")
     for record in summary.case_records:
@@ -199,13 +204,16 @@ def prepare_samples_command() -> None:
 )
 def report(run_dir: Path, report_format: str, output: Path | None) -> None:
     """Generate reports from a FileGate run result."""
-    normalized_format = report_format.lower()
-    if normalized_format == "json":
-        content = render_json_report(run_dir)
-    elif normalized_format == "markdown":
-        content = render_markdown_report(run_dir)
-    else:
-        content = render_html_report(run_dir)
+    try:
+        normalized_format = report_format.lower()
+        if normalized_format == "json":
+            content = render_json_report(run_dir)
+        elif normalized_format == "markdown":
+            content = render_markdown_report(run_dir)
+        else:
+            content = render_html_report(run_dir)
+    except ArtifactValidationError as exc:
+        raise click.ClickException(str(exc)) from exc
 
     if output is None:
         click.echo(content, nl=False)
@@ -267,25 +275,28 @@ def compare_runs(
     output: Path | None,
 ) -> None:
     """Generate a side-by-side comparison report for two FileGate runs."""
-    if latest_samples:
-        if left_run_dir or right_run_dir:
-            raise click.ClickException(
-                "Do not pass --left-run-dir/--right-run-dir when using --latest-samples."
-            )
-        left_run_dir, right_run_dir = _resolve_latest_sample_runs(runs_root)
-    else:
-        if left_run_dir is None or right_run_dir is None:
-            raise click.ClickException(
-                "Either pass both --left-run-dir and --right-run-dir, or use --latest-samples."
-            )
+    try:
+        if latest_samples:
+            if left_run_dir or right_run_dir:
+                raise click.ClickException(
+                    "Do not pass --left-run-dir/--right-run-dir when using --latest-samples."
+                )
+            left_run_dir, right_run_dir = _resolve_latest_sample_runs(runs_root)
+        else:
+            if left_run_dir is None or right_run_dir is None:
+                raise click.ClickException(
+                    "Either pass both --left-run-dir and --right-run-dir, or use --latest-samples."
+                )
 
-    normalized_format = report_format.lower()
-    if normalized_format == "json":
-        content = render_comparison_json_report(left_run_dir, right_run_dir)
-    elif normalized_format == "markdown":
-        content = render_comparison_markdown_report(left_run_dir, right_run_dir)
-    else:
-        content = render_comparison_html_report(left_run_dir, right_run_dir)
+        normalized_format = report_format.lower()
+        if normalized_format == "json":
+            content = render_comparison_json_report(left_run_dir, right_run_dir)
+        elif normalized_format == "markdown":
+            content = render_comparison_markdown_report(left_run_dir, right_run_dir)
+        else:
+            content = render_comparison_html_report(left_run_dir, right_run_dir)
+    except ArtifactValidationError as exc:
+        raise click.ClickException(str(exc)) from exc
 
     if output is None:
         click.echo(content, nl=False)
