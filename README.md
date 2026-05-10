@@ -63,8 +63,8 @@ The current CLI commands are:
 
 - `filegate doctor`
 - `filegate list-cases`
+- `filegate list-targets`
 - `filegate run`
-- `filegate run-electron`
 - `filegate report`
 - `filegate compare-runs`
 
@@ -128,7 +128,58 @@ cancel_save_dialog  semi_automatic    Cancel save dialog
 
 Use this command as the source of truth for what the current implementation can execute.
 
-### 3. Run one or more cases against a target
+### 3. Discover bundled target presets
+
+```bash
+filegate list-targets
+```
+
+Example output:
+
+```text
+python-tkinter  Bundled Python Tkinter sample target.
+electron        Bundled Electron sample target.
+```
+
+### 4. Run one or more cases against a target
+
+`run` supports two modes:
+
+1. **Preset mode (recommended for first run)**
+2. **Advanced custom command mode**
+
+It also supports execution mode selection:
+
+- `--mode auto` (default) — uses interactive dialogs when GUI session is available, otherwise simulation
+- `--mode interactive` — force real dialog interaction
+- `--mode simulation` — force deterministic non-interactive simulation
+
+#### Preset mode (recommended)
+
+Run the bundled Tkinter sample:
+
+```bash
+filegate run python-tkinter --mode interactive --output-dir runs
+```
+
+Run the bundled Electron sample:
+
+```bash
+filegate run electron --mode interactive --output-dir runs
+```
+
+If you omit `--case-id`, FileGate runs all currently implemented cases.
+
+You can still limit cases:
+
+```bash
+filegate run python-tkinter \
+  --mode interactive \
+  --case-id open_file_single \
+  --case-id open_folder
+```
+
+#### Advanced custom mode
 
 The generic `run` command launches a target command and passes it:
 
@@ -141,43 +192,41 @@ General form:
 
 ```bash
 filegate run \
+  [<preset-target-id>] \
+  [--mode auto|interactive|simulation] \
+  [--case-id <case-id>]... \
+  [--output-dir runs] \
+  [--timeout-seconds 10]
+```
+
+Custom target form:
+
+```bash
+filegate run \
   --target-name <logical-name> \
   --target-command '<command used to start the app>' \
   --sample-app <identifier-used-in-results> \
   [--case-id <case-id>]... \
   [--output-dir runs] \
   [--timeout-seconds 10] \
+  [--mode auto|interactive|simulation] \
   [--working-directory /absolute/path]
 ```
 
-#### Example: run the bundled Python Tkinter sample
+#### Example: run a custom command-compatible target
 
 This repository includes `samples/python-tkinter/app.py`, which follows the required target contract.
 
 ```bash
 filegate run \
-  --target-name python-tkinter \
+  --target-name my-target \
   --target-command 'python3 samples/python-tkinter/app.py' \
   --sample-app samples/python-tkinter \
-  --case-id open_file_single \
-  --output-dir runs
+  --mode simulation \
+  --case-id open_file_single
 ```
 
-You can pass multiple `--case-id` flags to run more than one case:
-
-```bash
-filegate run \
-  --target-name python-tkinter \
-  --target-command 'python3 samples/python-tkinter/app.py' \
-  --sample-app samples/python-tkinter \
-  --case-id open_file_single \
-  --case-id open_folder \
-  --case-id cancel_open_dialog
-```
-
-If you omit `--case-id`, FileGate runs all currently implemented cases in the registry.
-
-### 4. Generate a report from a completed run
+### 5. Generate a report from a completed run
 
 Each run creates a run directory containing a `run-summary.json` file. Use that run directory with `report`.
 
@@ -202,7 +251,7 @@ Supported formats:
 - `markdown`
 - `html`
 
-### 5. Compare two runs
+### 6. Compare two runs
 
 If you have two run directories, you can compare them directly:
 
@@ -250,10 +299,10 @@ cd samples/electron
 npm install
 ```
 
-Then run it through the dedicated helper command:
+Then run it with the preset target:
 
 ```bash
-filegate run-electron --case-id open_file_single --output-dir runs
+filegate run electron --mode interactive --case-id open_file_single --output-dir runs
 ```
 
 This command uses the bundled Electron sample target automatically.
@@ -307,10 +356,8 @@ Use this when you first clone the repo or switch to another machine/session.
 ### Workflow B: run a single case and inspect the result
 
 ```bash
-filegate run \
-  --target-name python-tkinter \
-  --target-command 'python3 samples/python-tkinter/app.py' \
-  --sample-app samples/python-tkinter \
+filegate run python-tkinter \
+  --mode interactive \
   --case-id open_file_single \
   --output-dir runs
 
@@ -357,7 +404,7 @@ This is useful for comparing:
 - The current implemented case registry is intentionally small.
 - The broader catalog in [`docs/test-cases.md`](docs/test-cases.md) includes planned cases that are not yet exposed by `list-cases`.
 - The `run` command only works with targets that accept FileGate's `--scenario` and `--output` arguments and emit compatible result JSON.
-- Sample targets may use simulation mode for deterministic execution; that is useful for runner validation, but it is not the same as validating a live native dialog interaction.
+- Sample targets support both simulation and interactive modes. Use `--mode interactive` when you want to manually interact with native dialogs, and `--mode simulation` for deterministic/headless validation.
 
 ## Documentation
 

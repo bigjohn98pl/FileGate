@@ -54,6 +54,7 @@ class RunRequest:
     platform_metadata: PlatformMetadata | None = None
     cancellation_event: Event | None = None
     simulation_root: Path | None = None
+    execution_mode: str = "auto"
 
 
 @dataclass(slots=True)
@@ -84,6 +85,10 @@ class Runner:
         run_output_dir = request.output_dir / run_id
         run_output_dir.mkdir(parents=True, exist_ok=True)
         platform_metadata = request.platform_metadata or detect_platform_metadata()
+        simulation_enabled = _resolve_simulation_enabled(
+            request.execution_mode,
+            platform_metadata,
+        )
 
         case_records: list[CaseRunRecord] = []
         for case in self._case_registry.select(request.case_ids):
@@ -96,6 +101,7 @@ class Runner:
                     run_id=run_id,
                     run_output_dir=run_output_dir,
                     platform_metadata=platform_metadata,
+                    simulation_enabled=simulation_enabled,
                 )
             )
 
@@ -134,6 +140,7 @@ class Runner:
         run_id: str,
         run_output_dir: Path,
         platform_metadata: PlatformMetadata,
+        simulation_enabled: bool,
     ) -> CaseRunRecord:
         case_dir = run_output_dir / case.case_id
         case_dir.mkdir(parents=True, exist_ok=True)
@@ -147,6 +154,7 @@ class Runner:
             run_id=run_id,
             platform_metadata=platform_metadata,
             simulation_root=request.simulation_root or case_dir / "simulation",
+            simulation_enabled=simulation_enabled,
         )
         scenario_path.write_text(
             json.dumps(scenario_payload, indent=2, ensure_ascii=False) + "\n",
@@ -230,8 +238,10 @@ class Runner:
         run_id: str,
         platform_metadata: PlatformMetadata,
         simulation_root: Path,
+        simulation_enabled: bool,
     ) -> dict[str, Any]:
-        simulation_root.mkdir(parents=True, exist_ok=True)
+        if simulation_enabled:
+            simulation_root.mkdir(parents=True, exist_ok=True)
         payload: dict[str, Any] = {
             "run_id": run_id,
             "platform": asdict(platform_metadata),
@@ -244,9 +254,12 @@ class Runner:
                 "cancel_is_expected": case.cancel_is_expected,
             },
             "simulation": {
-                "enabled": True,
+                "enabled": simulation_enabled,
             },
         }
+
+        if not simulation_enabled:
+            return payload
 
         if case.case_id == "open_file_single":
             file_path = simulation_root / "single.txt"
@@ -467,3 +480,17 @@ def _normalize_notes(notes: Any) -> list[dict[str, str]]:
 def _generate_run_id(target_name: str) -> str:
     timestamp = datetime.now(UTC).strftime("%Y-%m-%dT%H-%M-%SZ")
     return f"{timestamp}-{target_name}"
+
+
+def _resolve_simulation_enabled(mode: str, platform_metadata: PlatformMetadata) -> bool:
+    normalized = mode.lower().strip()
+    if normalized == "simulation":
+        return True
+    if normalized == "interactive":
+        return False
+    if normalized != "auto":
+        raise ValueError("execution_mode must be one of: auto, interactive, simulation")
+
+    has_display = bool(os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY"))
+    session_known = str(platform_metadata.session_type or "unknown").lower() != "unknown"
+    return not (has_display and session_known)

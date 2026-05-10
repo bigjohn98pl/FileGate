@@ -19,7 +19,7 @@ from filegate.reporting import (
     render_markdown_report,
 )
 from filegate.runner import RunRequest, Runner, build_target_from_command
-from filegate.targets import build_electron_target
+from filegate.targets import build_preset_target, list_preset_targets
 
 
 @click.group(
@@ -45,9 +45,10 @@ def list_cases() -> None:
 
 
 @main.command()
-@click.option("--target-name", required=True, help="Logical target name.")
-@click.option("--target-command", required=True, help="Command used to launch the target.")
-@click.option("--sample-app", required=True, help="Sample app identifier for result payloads.")
+@click.argument("target", required=False)
+@click.option("--target-name", required=False, help="Logical target name (advanced/custom mode).")
+@click.option("--target-command", required=False, help="Command used to launch the target (advanced/custom mode).")
+@click.option("--sample-app", required=False, help="Sample app identifier for result payloads (advanced/custom mode).")
 @click.option(
     "--case-id",
     "case_ids",
@@ -61,34 +62,67 @@ def list_cases() -> None:
     type=click.Path(path_type=Path, file_okay=False, dir_okay=True),
 )
 @click.option("--timeout-seconds", type=float, default=None)
+@click.option(
+    "--mode",
+    "execution_mode",
+    type=click.Choice(["auto", "interactive", "simulation"], case_sensitive=False),
+    default="auto",
+    show_default=True,
+    help="Execution mode. 'auto' chooses interactive when GUI is available, otherwise simulation.",
+)
 @click.option(
     "--working-directory",
     type=click.Path(path_type=Path, file_okay=False, dir_okay=True),
     default=None,
 )
 def run(
+    target: str | None,
     *,
-    target_name: str,
-    target_command: str,
-    sample_app: str,
+    target_name: str | None,
+    target_command: str | None,
+    sample_app: str | None,
     case_ids: tuple[str, ...],
     output_dir: Path,
     timeout_seconds: float | None,
+    execution_mode: str,
     working_directory: Path | None,
 ) -> None:
-    """Execute a FileGate run against a target."""
-    target = build_target_from_command(
-        name=target_name,
-        command=target_command,
-        sample_app=sample_app,
-        working_directory=str(working_directory) if working_directory else None,
-    )
+    """Execute a FileGate run against a preset target or custom target command."""
+    if target:
+        if any(value is not None for value in (target_name, target_command, sample_app, working_directory)):
+            raise click.ClickException(
+                "When positional TARGET is provided, do not pass --target-name/--target-command/--sample-app/--working-directory."
+            )
+        resolved_target = build_preset_target(target)
+    else:
+        missing = [
+            option_name
+            for option_name, option_value in (
+                ("--target-name", target_name),
+                ("--target-command", target_command),
+                ("--sample-app", sample_app),
+            )
+            if not option_value
+        ]
+        if missing:
+            raise click.ClickException(
+                "Custom mode requires all of: --target-name, --target-command, --sample-app. "
+                f"Missing: {', '.join(missing)}"
+            )
+        resolved_target = build_target_from_command(
+            name=str(target_name),
+            command=str(target_command),
+            sample_app=str(sample_app),
+            working_directory=str(working_directory) if working_directory else None,
+        )
+
     summary = Runner().run(
         RunRequest(
-            target=target,
+            target=resolved_target,
             output_dir=output_dir,
             case_ids=list(case_ids) or None,
             timeout_seconds=timeout_seconds,
+            execution_mode=execution_mode.lower(),
         )
     )
     click.echo(f"Run completed: {summary.run_id}")
@@ -99,37 +133,11 @@ def run(
         )
 
 
-@main.command(name="run-electron")
-@click.option(
-    "--case-id",
-    "case_ids",
-    multiple=True,
-    help="Case identifier to execute. May be passed multiple times.",
-)
-@click.option(
-    "--output-dir",
-    default="runs",
-    show_default=True,
-    type=click.Path(path_type=Path, file_okay=False, dir_okay=True),
-)
-@click.option("--timeout-seconds", type=float, default=None)
-def run_electron(case_ids: tuple[str, ...], output_dir: Path, timeout_seconds: float | None) -> None:
-    """Execute a FileGate run against the bundled Electron sample target."""
-    target = build_electron_target()
-    summary = Runner().run(
-        RunRequest(
-            target=target,
-            output_dir=output_dir,
-            case_ids=list(case_ids) or None,
-            timeout_seconds=timeout_seconds,
-        )
-    )
-    click.echo(f"Run completed: {summary.run_id}")
-    click.echo(f"Summary: {summary.summary_path}")
-    for record in summary.case_records:
-        click.echo(
-            f"- {record.case_id}: {record.status} ({record.duration_ms} ms) -> {record.result_path}"
-        )
+@main.command(name="list-targets")
+def list_targets() -> None:
+    """List bundled target presets available for simplified `run TARGET` workflow."""
+    for target in list_preset_targets():
+        click.echo(f"{target['id']}\t{target['description']}")
 
 
 @main.command()
