@@ -1,0 +1,53 @@
+{
+  "schema_version": "0.1",
+  "run_id": "2026-05-10T21-38-22Z-electron",
+  "platform": {
+    "os": "linux",
+    "distribution": "Fedora Linux",
+    "version": "43",
+    "desktop_environment": "KDE",
+    "session_type": "wayland",
+    "sandbox": "none"
+  },
+  "target": {
+    "name": "electron",
+    "version": "^35.5.1",
+    "sample_app": "samples/electron"
+  },
+  "case": {
+    "id": "filter_images_only",
+    "name": "Filter images only",
+    "automation_level": "semi_automatic"
+  },
+  "result": {
+    "status": "pass",
+    "duration_ms": 73,
+    "returned_resource_type": "path",
+    "returned_value_example": "/home/tynusz/.cline/worktrees/4437d/FileGate/runs-validation/2026-05-10T21-38-22Z-electron/filter_images_only/simulation/selected-image.png",
+    "can_read": true,
+    "can_write": true,
+    "error_code": null,
+    "notes": [
+      {
+        "code": "SELECTED_FILTER_LABEL",
+        "message": "Simulation recorded selected filter label 'Image files'."
+      },
+      {
+        "code": "SIMULATED",
+        "message": "Result was produced using the documented simulation mode rather than an interactive Electron dialog."
+      },
+      {
+        "code": "CONFIGURED_FILTERS",
+        "message": "Configured dialog filters: Image files (*.png;*.jpg;*.jpeg;*.gif), All files (*.*)."
+      },
+      {
+        "code": "FILTER_INTENT",
+        "message": "Scenario exercised filter intent 'Image files'."
+      },
+      {
+        "code": "FILTER_MATCHED_SELECTION",
+        "message": "Selected file extension '.png' matched the allowed filter set [\".gif\",\".jpeg\",\".jpg\",\".png\"]."
+      }
+    ]
+  }
+}

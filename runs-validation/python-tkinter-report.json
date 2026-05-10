@@ -1,0 +1,293 @@
+{
+  "schema_version": "0.1",
+  "report_format": "json",
+  "run_id": "2026-05-10T21-38-22Z-python-tkinter",
+  "generated_at": "2026-05-10T21:38:22.996522+00:00",
+  "source_run_directory": "/home/tynusz/.cline/worktrees/4437d/FileGate/runs-validation/2026-05-10T21-38-22Z-python-tkinter",
+  "platform": {
+    "os": "linux",
+    "distribution": "Fedora Linux",
+    "version": "43",
+    "desktop_environment": "KDE",
+    "session_type": "wayland",
+    "sandbox": "none"
+  },
+  "target": {
+    "name": "python-tkinter",
+    "version": "unknown",
+    "sample_app": "samples/python-tkinter"
+  },
+  "total_cases": 5,
+  "counts_by_status": {
+    "pass": 4,
+    "warn": 1
+  },
+  "warnings": [],
+  "cases": [
+    {
+      "schema_version": "0.1",
+      "run_id": "2026-05-10T21-38-22Z-python-tkinter",
+      "platform": {
+        "os": "linux",
+        "distribution": "Fedora Linux",
+        "version": "43",
+        "desktop_environment": "KDE",
+        "session_type": "wayland",
+        "sandbox": "none"
+      },
+      "target": {
+        "name": "python-tkinter",
+        "version": "unknown",
+        "sample_app": "samples/python-tkinter"
+      },
+      "case": {
+        "id": "filter_pdf_only",
+        "name": "Filter PDF only",
+        "automation_level": "semi_automatic"
+      },
+      "result": {
+        "status": "pass",
+        "duration_ms": 0,
+        "returned_resource_type": "path",
+        "returned_value_example": "/home/tynusz/.cline/worktrees/4437d/FileGate/runs-validation/2026-05-10T21-38-22Z-python-tkinter/filter_pdf_only/simulation/selected-document.pdf",
+        "can_read": true,
+        "can_write": true,
+        "error_code": null,
+        "notes": [
+          {
+            "code": "SELECTED_FILTER_LABEL",
+            "message": "Simulation recorded selected filter label 'PDF documents'."
+          },
+          {
+            "code": "SIMULATED",
+            "message": "Result was produced using the documented simulation mode rather than an interactive Tk dialog."
+          },
+          {
+            "code": "CONFIGURED_FILTERS",
+            "message": "Configured dialog filters: PDF documents (*.pdf), All files (*.*)."
+          },
+          {
+            "code": "FILTER_INTENT",
+            "message": "Scenario exercised filter intent 'PDF documents'."
+          },
+          {
+            "code": "FILTER_MATCHED_SELECTION",
+            "message": "Selected file extension '.pdf' matched the allowed filter set ['.pdf']."
+          }
+        ]
+      }
+    },
+    {
+      "schema_version": "0.1",
+      "run_id": "2026-05-10T21-38-22Z-python-tkinter",
+      "platform": {
+        "os": "linux",
+        "distribution": "Fedora Linux",
+        "version": "43",
+        "desktop_environment": "KDE",
+        "session_type": "wayland",
+        "sandbox": "none"
+      },
+      "target": {
+        "name": "python-tkinter",
+        "version": "unknown",
+        "sample_app": "samples/python-tkinter"
+      },
+      "case": {
+        "id": "filter_images_only",
+        "name": "Filter images only",
+        "automation_level": "semi_automatic"
+      },
+      "result": {
+        "status": "pass",
+        "duration_ms": 0,
+        "returned_resource_type": "path",
+        "returned_value_example": "/home/tynusz/.cline/worktrees/4437d/FileGate/runs-validation/2026-05-10T21-38-22Z-python-tkinter/filter_images_only/simulation/selected-image.png",
+        "can_read": true,
+        "can_write": true,
+        "error_code": null,
+        "notes": [
+          {
+            "code": "SELECTED_FILTER_LABEL",
+            "message": "Simulation recorded selected filter label 'Image files'."
+          },
+          {
+            "code": "SIMULATED",
+            "message": "Result was produced using the documented simulation mode rather than an interactive Tk dialog."
+          },
+          {
+            "code": "CONFIGURED_FILTERS",
+            "message": "Configured dialog filters: Image files (*.png;*.jpg;*.jpeg;*.gif), All files (*.*)."
+          },
+          {
+            "code": "FILTER_INTENT",
+            "message": "Scenario exercised filter intent 'Image files'."
+          },
+          {
+            "code": "FILTER_MATCHED_SELECTION",
+            "message": "Selected file extension '.png' matched the allowed filter set ['.gif', '.jpeg', '.jpg', '.png']."
+          }
+        ]
+      }
+    },
+    {
+      "schema_version": "0.1",
+      "run_id": "2026-05-10T21-38-22Z-python-tkinter",
+      "platform": {
+        "os": "linux",
+        "distribution": "Fedora Linux",
+        "version": "43",
+        "desktop_environment": "KDE",
+        "session_type": "wayland",
+        "sandbox": "none"
+      },
+      "target": {
+        "name": "python-tkinter",
+        "version": "unknown",
+        "sample_app": "samples/python-tkinter"
+      },
+      "case": {
+        "id": "filter_multiple_mime_types",
+        "name": "Filter multiple MIME types",
+        "automation_level": "semi_automatic"
+      },
+      "result": {
+        "status": "pass",
+        "duration_ms": 0,
+        "returned_resource_type": "path",
+        "returned_value_example": "/home/tynusz/.cline/worktrees/4437d/FileGate/runs-validation/2026-05-10T21-38-22Z-python-tkinter/filter_multiple_mime_types/simulation/selected-image.jpg",
+        "can_read": true,
+        "can_write": true,
+        "error_code": null,
+        "notes": [
+          {
+            "code": "SELECTED_FILTER_LABEL",
+            "message": "Simulation recorded selected filter label 'Image files'."
+          },
+          {
+            "code": "SIMULATED",
+            "message": "Result was produced using the documented simulation mode rather than an interactive Tk dialog."
+          },
+          {
+            "code": "CONFIGURED_FILTERS",
+            "message": "Configured dialog filters: PDF documents (*.pdf), Image files (*.png;*.jpg;*.jpeg), Text files (*.txt;*.md)."
+          },
+          {
+            "code": "FILTER_INTENT",
+            "message": "Scenario exercised filter intent 'Image files'."
+          },
+          {
+            "code": "FILTER_MATCHED_SELECTION",
+            "message": "Selected file extension '.jpg' matched the allowed filter set ['.jpeg', '.jpg', '.png']."
+          }
+        ]
+      }
+    },
+    {
+      "schema_version": "0.1",
+      "run_id": "2026-05-10T21-38-22Z-python-tkinter",
+      "platform": {
+        "os": "linux",
+        "distribution": "Fedora Linux",
+        "version": "43",
+        "desktop_environment": "KDE",
+        "session_type": "wayland",
+        "sandbox": "none"
+      },
+      "target": {
+        "name": "python-tkinter",
+        "version": "unknown",
+        "sample_app": "samples/python-tkinter"
+      },
+      "case": {
+        "id": "extension_auto_append_on_save",
+        "name": "Extension auto append on save",
+        "automation_level": "semi_automatic"
+      },
+      "result": {
+        "status": "pass",
+        "duration_ms": 0,
+        "returned_resource_type": "path",
+        "returned_value_example": "/home/tynusz/.cline/worktrees/4437d/FileGate/runs-validation/2026-05-10T21-38-22Z-python-tkinter/extension_auto_append_on_save/simulation/auto-append-target.txt",
+        "can_read": false,
+        "can_write": true,
+        "error_code": null,
+        "notes": [
+          {
+            "code": "SELECTED_FILTER_LABEL",
+            "message": "Simulation recorded selected filter label 'Text files'."
+          },
+          {
+            "code": "SIMULATED",
+            "message": "Result was produced using the documented simulation mode rather than an interactive Tk dialog."
+          },
+          {
+            "code": "CONFIGURED_FILTERS",
+            "message": "Configured dialog filters: Text files (*.txt), All files (*.*)."
+          },
+          {
+            "code": "FILTER_INTENT",
+            "message": "Scenario exercised filter intent 'Text files'."
+          },
+          {
+            "code": "AUTO_APPEND_OBSERVED",
+            "message": "Returned save path used extension '.txt', matching the configured default extension."
+          }
+        ]
+      }
+    },
+    {
+      "schema_version": "0.1",
+      "run_id": "2026-05-10T21-38-22Z-python-tkinter",
+      "platform": {
+        "os": "linux",
+        "distribution": "Fedora Linux",
+        "version": "43",
+        "desktop_environment": "KDE",
+        "session_type": "wayland",
+        "sandbox": "none"
+      },
+      "target": {
+        "name": "python-tkinter",
+        "version": "unknown",
+        "sample_app": "samples/python-tkinter"
+      },
+      "case": {
+        "id": "wrong_extension_selected",
+        "name": "Wrong extension selected",
+        "automation_level": "semi_automatic"
+      },
+      "result": {
+        "status": "warn",
+        "duration_ms": 0,
+        "returned_resource_type": "path",
+        "returned_value_example": "/home/tynusz/.cline/worktrees/4437d/FileGate/runs-validation/2026-05-10T21-38-22Z-python-tkinter/wrong_extension_selected/simulation/mismatched-extension.pdf",
+        "can_read": false,
+        "can_write": true,
+        "error_code": null,
+        "notes": [
+          {
+            "code": "SELECTED_FILTER_LABEL",
+            "message": "Simulation recorded selected filter label 'Text files'."
+          },
+          {
+            "code": "SIMULATED",
+            "message": "Result was produced using the documented simulation mode rather than an interactive Tk dialog."
+          },
+          {
+            "code": "CONFIGURED_FILTERS",
+            "message": "Configured dialog filters: Text files (*.txt), PDF documents (*.pdf)."
+          },
+          {
+            "code": "FILTER_INTENT",
+            "message": "Scenario exercised filter intent 'Text files'."
+          },
+          {
+            "code": "WRONG_EXTENSION_PRESERVED",
+            "message": "Returned save path preserved the mismatched extension '.pdf' instead of coercing to '.txt'."
+          }
+        ]
+      }
+    }
+  ]
+}

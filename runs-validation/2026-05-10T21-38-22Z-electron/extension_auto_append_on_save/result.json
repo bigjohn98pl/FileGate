@@ -1,0 +1,53 @@
+{
+  "schema_version": "0.1",
+  "run_id": "2026-05-10T21-38-22Z-electron",
+  "platform": {
+    "os": "linux",
+    "distribution": "Fedora Linux",
+    "version": "43",
+    "desktop_environment": "KDE",
+    "session_type": "wayland",
+    "sandbox": "none"
+  },
+  "target": {
+    "name": "electron",
+    "version": "^35.5.1",
+    "sample_app": "samples/electron"
+  },
+  "case": {
+    "id": "extension_auto_append_on_save",
+    "name": "Extension auto append on save",
+    "automation_level": "semi_automatic"
+  },
+  "result": {
+    "status": "pass",
+    "duration_ms": 82,
+    "returned_resource_type": "path",
+    "returned_value_example": "/home/tynusz/.cline/worktrees/4437d/FileGate/runs-validation/2026-05-10T21-38-22Z-electron/extension_auto_append_on_save/simulation/auto-append-target.txt",
+    "can_read": false,
+    "can_write": true,
+    "error_code": null,
+    "notes": [
+      {
+        "code": "SELECTED_FILTER_LABEL",
+        "message": "Simulation recorded selected filter label 'Text files'."
+      },
+      {
+        "code": "SIMULATED",
+        "message": "Result was produced using the documented simulation mode rather than an interactive Electron dialog."
+      },
+      {
+        "code": "CONFIGURED_FILTERS",
+        "message": "Configured dialog filters: Text files (*.txt), All files (*.*)."
+      },
+      {
+        "code": "FILTER_INTENT",
+        "message": "Scenario exercised filter intent 'Text files'."
+      },
+      {
+        "code": "AUTO_APPEND_OBSERVED",
+        "message": "Returned save path used extension '.txt', matching the configured default extension."
+      }
+    ]
+  }
+}

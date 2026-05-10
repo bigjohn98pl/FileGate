@@ -8,6 +8,11 @@ It supports:
 - `open_file_multiple`
 - `open_folder`
 - `save_file_new`
+- `filter_pdf_only`
+- `filter_images_only`
+- `filter_multiple_mime_types`
+- `extension_auto_append_on_save`
+- `wrong_extension_selected`
 - `save_file_overwrite`
 - `cancel_open_dialog`
 - `cancel_save_dialog`
@@ -120,6 +125,11 @@ Known case IDs map automatically to default dialog types:
 - `open_file_multiple` → `open_files`
 - `open_folder` → `open_folder`
 - `save_file_new` → `save_file`
+- `filter_pdf_only` → `open_file`
+- `filter_images_only` → `open_file`
+- `filter_multiple_mime_types` → `open_file`
+- `extension_auto_append_on_save` → `save_file`
+- `wrong_extension_selected` → `save_file`
 - `save_file_overwrite` → `save_file`
 - `cancel_open_dialog` → `open_file`
 - `cancel_save_dialog` → `save_file`
@@ -194,6 +204,9 @@ Result mapping notes:
 - Selection-count mismatches return `result.status = "fail"` with a diagnostic note.
 - Expected cancellation returns `result.status = "pass"` and `result.error_code = "USER_CANCELLED"`.
 - Unexpected cancellation returns `result.status = "fail"` and `result.error_code = "USER_CANCELLED"`.
+- Filter-oriented cases add structured notes describing configured filters, intended filter selection, and whether the returned extension matched the expected filter set.
+- Save-extension cases add structured notes describing whether the configured extension was auto-appended, preserved, or overridden.
+- When native dialog APIs do not expose deterministic filter/extension state, the sample reports best-effort observations and records that limitation in result notes.
 - Headless or unavailable Tk backends return `result.status = "unsupported"` or `fail` with an explanatory error code.
 - `returned_resource_type` is `path` when a path is returned and `unknown` when nothing is selected.
 

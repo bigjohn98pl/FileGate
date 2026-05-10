@@ -1,0 +1,52 @@
+{
+  "run_id": "2026-05-10T21-38-22Z-electron",
+  "platform": {
+    "os": "linux",
+    "distribution": "Fedora Linux",
+    "version": "43",
+    "desktop_environment": "KDE",
+    "session_type": "wayland",
+    "sandbox": "none"
+  },
+  "target": {
+    "name": "electron",
+    "version": "^35.5.1",
+    "sample_app": "samples/electron"
+  },
+  "case": {
+    "id": "filter_images_only",
+    "name": "Filter images only",
+    "automation_level": "semi_automatic"
+  },
+  "dialog": {
+    "type": "open_file",
+    "title": "Filter images only",
+    "filetypes": [
+      [
+        "Image files",
+        "*.png;*.jpg;*.jpeg;*.gif"
+      ],
+      [
+        "All files",
+        "*.*"
+      ]
+    ]
+  },
+  "expectation": {
+    "cancel_is_expected": false,
+    "expected_selection_count": 1,
+    "selected_filter_label": "Image files",
+    "allowed_extensions": [
+      ".png",
+      ".jpg",
+      ".jpeg",
+      ".gif"
+    ],
+    "selection_should_match_filter": true
+  },
+  "simulation": {
+    "enabled": true,
+    "selected_path": "/home/tynusz/.cline/worktrees/4437d/FileGate/runs-validation/2026-05-10T21-38-22Z-electron/filter_images_only/simulation/selected-image.png",
+    "selected_filter_label": "Image files"
+  }
+}

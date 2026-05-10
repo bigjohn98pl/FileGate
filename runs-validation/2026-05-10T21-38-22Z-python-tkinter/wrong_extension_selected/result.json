@@ -1,0 +1,53 @@
+{
+  "schema_version": "0.1",
+  "run_id": "2026-05-10T21-38-22Z-python-tkinter",
+  "platform": {
+    "os": "linux",
+    "distribution": "Fedora Linux",
+    "version": "43",
+    "desktop_environment": "KDE",
+    "session_type": "wayland",
+    "sandbox": "none"
+  },
+  "target": {
+    "name": "python-tkinter",
+    "version": "unknown",
+    "sample_app": "samples/python-tkinter"
+  },
+  "case": {
+    "id": "wrong_extension_selected",
+    "name": "Wrong extension selected",
+    "automation_level": "semi_automatic"
+  },
+  "result": {
+    "status": "warn",
+    "duration_ms": 0,
+    "returned_resource_type": "path",
+    "returned_value_example": "/home/tynusz/.cline/worktrees/4437d/FileGate/runs-validation/2026-05-10T21-38-22Z-python-tkinter/wrong_extension_selected/simulation/mismatched-extension.pdf",
+    "can_read": false,
+    "can_write": true,
+    "error_code": null,
+    "notes": [
+      {
+        "code": "SELECTED_FILTER_LABEL",
+        "message": "Simulation recorded selected filter label 'Text files'."
+      },
+      {
+        "code": "SIMULATED",
+        "message": "Result was produced using the documented simulation mode rather than an interactive Tk dialog."
+      },
+      {
+        "code": "CONFIGURED_FILTERS",
+        "message": "Configured dialog filters: Text files (*.txt), PDF documents (*.pdf)."
+      },
+      {
+        "code": "FILTER_INTENT",
+        "message": "Scenario exercised filter intent 'Text files'."
+      },
+      {
+        "code": "WRONG_EXTENSION_PRESERVED",
+        "message": "Returned save path preserved the mismatched extension '.pdf' instead of coercing to '.txt'."
+      }
+    ]
+  }
+}

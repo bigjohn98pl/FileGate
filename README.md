@@ -97,6 +97,11 @@ At the time of writing, `list-cases` reports these runnable cases:
 - `open_file_multiple`
 - `open_folder`
 - `save_file_new`
+- `filter_pdf_only`
+- `filter_images_only`
+- `filter_multiple_mime_types`
+- `extension_auto_append_on_save`
+- `wrong_extension_selected`
 - `cancel_open_dialog`
 - `cancel_save_dialog`
 
@@ -136,6 +141,11 @@ open_file_single    semi_automatic    Open file single
 open_file_multiple  semi_automatic    Open file multiple
 open_folder         semi_automatic    Open folder
 save_file_new       semi_automatic    Save file new
+filter_pdf_only     semi_automatic    Filter PDF only
+filter_images_only  semi_automatic    Filter images only
+filter_multiple_mime_types  semi_automatic    Filter multiple MIME types
+extension_auto_append_on_save  semi_automatic    Extension auto append on save
+wrong_extension_selected  semi_automatic    Wrong extension selected
 cancel_open_dialog  semi_automatic    Cancel open dialog
 cancel_save_dialog  semi_automatic    Cancel save dialog
 ```
