@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+import subprocess
 
 from filegate.runner import TargetConfig
 
@@ -20,6 +21,9 @@ def build_electron_target(repo_root: Path | None = None) -> TargetConfig:
     if package_json_path.exists():
         payload = json.loads(package_json_path.read_text(encoding="utf-8"))
         version = str(payload.get("devDependencies", {}).get("electron") or payload.get("version") or "unknown")
+    runtime_version = _detect_electron_runtime_version(sample_dir)
+    if runtime_version != "unknown":
+        version = runtime_version
 
     return TargetConfig(
         name="electron",
@@ -28,3 +32,15 @@ def build_electron_target(repo_root: Path | None = None) -> TargetConfig:
         version=version,
         working_directory=sample_dir,
     )
+
+
+def _detect_electron_runtime_version(sample_dir: Path) -> str:
+    completed = subprocess.run(
+        ["npm", "exec", "--", "electron", "--version"],
+        cwd=sample_dir,
+        capture_output=True,
+        text=True,
+    )
+    if completed.returncode != 0:
+        return "unknown"
+    return completed.stdout.strip().lstrip("v") or "unknown"

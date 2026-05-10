@@ -6,6 +6,7 @@ from pathlib import Path
 
 from filegate.runner import TargetConfig
 from filegate.targets.electron import build_electron_target
+from filegate.targets.python_gtk import build_python_gtk_target
 
 
 def build_python_tkinter_target(repo_root: Path | None = None) -> TargetConfig:
@@ -26,6 +27,10 @@ def list_preset_targets() -> list[dict[str, str]]:
     """Return metadata for known bundled target presets."""
     return [
         {
+            "id": "python-gtk",
+            "description": "Bundled Python GTK 4 sample target.",
+        },
+        {
             "id": "python-tkinter",
             "description": "Bundled Python Tkinter sample target.",
         },
@@ -39,6 +44,8 @@ def list_preset_targets() -> list[dict[str, str]]:
 def build_preset_target(target_id: str) -> TargetConfig:
     """Resolve and build a preset target by its identifier."""
     normalized = target_id.strip().lower()
+    if normalized == "python-gtk":
+        return build_python_gtk_target()
     if normalized == "python-tkinter":
         return build_python_tkinter_target()
     if normalized == "electron":
