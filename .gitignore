@@ -8,6 +8,8 @@ __pycache__/
 
 # FileGate task/runtime artifacts
 runs/
+runs-smoke*/
+runs-refactor*/
 samples/electron/node_modules/
 
 # Distribution / packaging
