@@ -98,3 +98,11 @@ Define the canonical JSON structure for FileGate case results.
 3. `status=pass` should not use non-null fatal error codes.
 4. `manual` cases may legitimately return `manual_required`.
 5. `notes` should remain structured and actionable.
+
+## Matrix Aggregation Note
+
+Phase 4 compatibility-matrix reporting consumes the existing run artifact layout rather than introducing a new per-case result schema.
+
+- Input remains `run-summary.json` plus per-case `result.json` files.
+- Matrix aggregation depends on stable values for `target`, `platform`, `case.id`, `result.status`, and `result.returned_resource_type`.
+- Repeated runs are intentionally preserved as separate observations so matrix output can summarize reproducibility and detect mixed outcomes within the same target/environment grouping.

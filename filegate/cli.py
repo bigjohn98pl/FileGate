@@ -19,6 +19,9 @@ from filegate.reporting import (
     render_comparison_markdown_report,
     render_html_report,
     render_json_report,
+    render_matrix_html_report,
+    render_matrix_json_report,
+    render_matrix_markdown_report,
     render_markdown_report,
 )
 from filegate.runner import RunRequest, Runner, build_target_from_command
@@ -307,6 +310,106 @@ def compare_runs(
     click.echo(f"Comparison report written: {output}")
 
 
+@main.command(name="matrix-report")
+@click.option(
+    "--run-dir",
+    "run_dirs",
+    multiple=True,
+    type=click.Path(exists=True, path_type=Path, file_okay=False, dir_okay=True),
+    help="Path to a FileGate run directory containing run-summary.json. May be passed multiple times.",
+)
+@click.option(
+    "--latest-sample-runs",
+    is_flag=True,
+    default=False,
+    help="Use every bundled sample run found under --runs-root instead of passing explicit --run-dir values.",
+)
+@click.option(
+    "--runs-root",
+    type=click.Path(path_type=Path, file_okay=False, dir_okay=True),
+    default="runs",
+    show_default=True,
+    help="Root directory containing run subdirectories used by --latest-sample-runs.",
+)
+@click.option(
+    "--group-by",
+    type=click.Choice(["target-environment", "target", "environment"], case_sensitive=False),
+    default="target-environment",
+    show_default=True,
+    help="Grouping strategy for matrix columns.",
+)
+@click.option(
+    "--environment-field",
+    "environment_fields",
+    multiple=True,
+    type=click.Choice(
+        ["os", "distribution", "version", "desktop_environment", "session_type", "sandbox"],
+        case_sensitive=False,
+    ),
+    help="Environment fields to include in environment grouping/signatures. Defaults to all canonical fields.",
+)
+@click.option(
+    "--target-filter",
+    "target_filters",
+    multiple=True,
+    help="Limit included runs to these target names. May be passed multiple times.",
+)
+@click.option(
+    "--environment-filter",
+    "environment_filters",
+    multiple=True,
+    help="Limit included runs to environment key=value pairs, for example sandbox=flatpak.",
+)
+@click.option(
+    "--format",
+    "report_format",
+    required=True,
+    type=click.Choice(["json", "markdown", "html"], case_sensitive=False),
+    help="Matrix report output format.",
+)
+@click.option(
+    "--output",
+    type=click.Path(path_type=Path, dir_okay=False),
+    default=None,
+    help="Optional output file path. Defaults to stdout when omitted.",
+)
+def matrix_report(
+    run_dirs: tuple[Path, ...],
+    latest_sample_runs: bool,
+    runs_root: Path,
+    group_by: str,
+    environment_fields: tuple[str, ...],
+    target_filters: tuple[str, ...],
+    environment_filters: tuple[str, ...],
+    report_format: str,
+    output: Path | None,
+) -> None:
+    """Generate a compatibility-matrix report for multiple FileGate runs."""
+    resolved_run_dirs = _resolve_matrix_run_dirs(run_dirs, latest_sample_runs, runs_root)
+    parsed_environment_filters = _parse_environment_filters(environment_filters)
+    normalized_format = report_format.lower()
+    render_kwargs = {
+        "group_by": group_by.lower(),
+        "environment_fields": tuple(field.lower() for field in environment_fields) or None,
+        "target_filters": target_filters or None,
+        "environment_filters": parsed_environment_filters or None,
+    }
+    if normalized_format == "json":
+        content = render_matrix_json_report(resolved_run_dirs, **render_kwargs)
+    elif normalized_format == "markdown":
+        content = render_matrix_markdown_report(resolved_run_dirs, **render_kwargs)
+    else:
+        content = render_matrix_html_report(resolved_run_dirs, **render_kwargs)
+
+    if output is None:
+        click.echo(content, nl=False)
+        return
+
+    output.parent.mkdir(parents=True, exist_ok=True)
+    output.write_text(content, encoding="utf-8")
+    click.echo(f"Matrix report written: {output}")
+
+
 def _resolve_latest_sample_runs(runs_root: Path) -> tuple[Path, Path]:
     normalized_runs_root = runs_root.expanduser().resolve()
     if not normalized_runs_root.exists():
@@ -349,6 +452,56 @@ def _resolve_latest_sample_runs(runs_root: Path) -> tuple[Path, Path]:
     return latest_by_target["electron"][1], latest_by_target["python-tkinter"][1]
 
 
+def _resolve_matrix_run_dirs(
+    run_dirs: tuple[Path, ...],
+    latest_sample_runs: bool,
+    runs_root: Path,
+) -> list[Path]:
+    if latest_sample_runs:
+        if run_dirs:
+            raise click.ClickException("Do not pass --run-dir when using --latest-sample-runs.")
+        discovered = _discover_run_directories(runs_root)
+        if not discovered:
+            raise click.ClickException(f"No run directories with run-summary.json were found under {runs_root.expanduser().resolve()}")
+        return discovered
+
+    if not run_dirs:
+        raise click.ClickException("Pass at least one --run-dir, or use --latest-sample-runs.")
+    return list(run_dirs)
+
+
+def _discover_run_directories(runs_root: Path) -> list[Path]:
+    normalized_runs_root = runs_root.expanduser().resolve()
+    if not normalized_runs_root.exists():
+        raise click.ClickException(f"Runs root does not exist: {normalized_runs_root}")
+
+    discovered: list[Path] = []
+    for run_dir in sorted(normalized_runs_root.iterdir()):
+        if not run_dir.is_dir():
+            continue
+        if (run_dir / "run-summary.json").exists():
+            discovered.append(run_dir)
+    return discovered
+
+
+def _parse_environment_filters(values: tuple[str, ...]) -> dict[str, str]:
+    parsed: dict[str, str] = {}
+    for value in values:
+        if "=" not in value:
+            raise click.ClickException(
+                "Environment filters must use key=value format, for example --environment-filter sandbox=flatpak."
+            )
+        key, raw_expected = value.split("=", 1)
+        normalized_key = key.strip().lower()
+        expected_value = raw_expected.strip()
+        if not normalized_key or not expected_value:
+            raise click.ClickException(
+                "Environment filters must include both a key and a value, for example sandbox=flatpak."
+            )
+        parsed[normalized_key] = expected_value
+    return parsed
+
+
 def _parse_generated_at(value: str) -> datetime | None:
     if not value:
         return None
@@ -366,6 +519,7 @@ main.add_command(prepare_samples_command, name="ps")
 main.add_command(run, name="r")
 main.add_command(report, name="rep")
 main.add_command(compare_runs, name="cr")
+main.add_command(matrix_report, name="mr")
 
 
 if __name__ == "__main__":

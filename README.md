@@ -15,6 +15,7 @@ Today, FileGate can:
 - run cases against a target application using a documented scenario/result contract
 - generate JSON, Markdown, and HTML reports from a run directory
 - compare two completed runs side by side
+- aggregate multiple completed runs into a compatibility-matrix style report
 
 The broader documentation in `docs/` describes a larger planned conformance surface. Not every case listed there is implemented in the CLI yet. The current runnable case set is the one returned by `filegate list-cases`.
 
@@ -69,6 +70,7 @@ The current CLI commands are:
 - `filegate run`
 - `filegate report`
 - `filegate compare-runs`
+- `filegate matrix-report`
 
 Short aliases are also available:
 
@@ -80,6 +82,7 @@ Short aliases are also available:
 - `filegate r` → `run`
 - `filegate rep` → `report`
 - `filegate cr` → `compare-runs`
+- `filegate mr` → `matrix-report`
 
 Show help at any time with:
 
@@ -309,6 +312,57 @@ filegate compare-runs \
   --format html \
   --output reports/comparison.html
 ```
+
+### 7. Build a compatibility matrix across multiple runs
+
+Use `matrix-report` when you want a publication-oriented multi-run view instead of a strict two-run comparison.
+
+Aggregate explicit run directories:
+
+```bash
+filegate matrix-report \
+  --run-dir runs/<run-a> \
+  --run-dir runs/<run-b> \
+  --run-dir runs/<run-c> \
+  --format markdown
+```
+
+Or aggregate every discovered run under `runs/`:
+
+```bash
+filegate matrix-report --latest-sample-runs --format markdown
+```
+
+The first iteration supports practical grouping and filtering options:
+
+- `--group-by target-environment` (default)
+- `--group-by target`
+- `--group-by environment`
+- `--target-filter <target-name>`
+- `--environment-filter key=value`
+- `--environment-field <field>` to reduce the environment signature used in grouping
+
+Example: group by target only while keeping just Fedora Wayland runs:
+
+```bash
+filegate matrix-report \
+  --latest-sample-runs \
+  --group-by target \
+  --environment-filter distribution='Fedora Linux' \
+  --environment-filter session_type=wayland \
+  --format html \
+  --output reports/matrix.html
+```
+
+#### Matrix baseline policy
+
+The current matrix intentionally uses a **summary baseline** rather than a weighted compatibility score.
+
+- If all observations in a matrix cell agree, the cell keeps that shared status.
+- If observations disagree, the cell becomes `mixed`.
+- Group summaries publish explicit counts for `compatible`, `caution`, `problematic`, `unavailable`, `mixed`, and `missing`.
+
+This keeps the first compatibility-matrix layer deterministic and reproducible while scoring policy is still being documented.
 
 ## Bundled sample targets
 
