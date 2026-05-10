@@ -64,9 +64,22 @@ The current CLI commands are:
 - `filegate doctor`
 - `filegate list-cases`
 - `filegate list-targets`
+- `filegate prepare-target`
+- `filegate prepare-samples`
 - `filegate run`
 - `filegate report`
 - `filegate compare-runs`
+
+Short aliases are also available:
+
+- `filegate doc` → `doctor`
+- `filegate lc` → `list-cases`
+- `filegate lt` → `list-targets`
+- `filegate pt` → `prepare-target`
+- `filegate ps` → `prepare-samples`
+- `filegate r` → `run`
+- `filegate rep` → `report`
+- `filegate cr` → `compare-runs`
 
 Show help at any time with:
 
@@ -142,6 +155,19 @@ electron        Bundled Electron sample target.
 ```
 
 ### 4. Run one or more cases against a target
+
+Before first run, prepare sample dependencies:
+
+```bash
+filegate prepare-samples
+```
+
+Or prepare only one target:
+
+```bash
+filegate prepare-target electron
+filegate prepare-target python-tkinter
+```
 
 `run` supports two modes:
 
@@ -260,6 +286,18 @@ filegate compare-runs \
   --left-run-dir runs/<left-run-id> \
   --right-run-dir runs/<right-run-id> \
   --format markdown
+```
+
+You can also automatically compare the latest runs of bundled sample apps (`electron` and `python-tkinter`):
+
+```bash
+filegate compare-runs --latest-samples --format markdown
+```
+
+If your runs are stored outside the default `runs/` directory, pass `--runs-root`:
+
+```bash
+filegate compare-runs --latest-samples --runs-root runs-smoke --format markdown
 ```
 
 Or write an HTML comparison report:
