@@ -21,14 +21,4 @@ This project uses documentation as the primary source of truth before implementa
 
 1. Define and refine documents in `docs/`.
 2. Derive implementation work items from documentation.
-3. Execute proof-of-concept tasks from `tasks/poc/`.
-4. Execute MVP implementation tasks from `tasks/mvp-agents/`.
-
-## Agent-Ready Tasks
-
-Task packs are designed for execution by coding agents with minimal ambiguity.
-
-- [`tasks/README.md`](tasks/README.md)
-- [`tasks/templates/agent-task-template.md`](tasks/templates/agent-task-template.md)
-- [`tasks/poc/`](tasks/poc/)
-- [`tasks/mvp-agents/`](tasks/mvp-agents/)
+3. Implement and validate the derived work in the codebase.
