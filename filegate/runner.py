@@ -13,6 +13,12 @@ import time
 from threading import Event
 from typing import Any
 
+from filegate.artifact_validation import (
+    ArtifactValidationError,
+    validate_case_result_payload,
+    validate_run_summary_consistency,
+    validate_run_summary_payload,
+)
 from filegate.cases import CaseDefinition, CaseRegistry, DEFAULT_CASE_REGISTRY
 from filegate.environment import PlatformMetadata, detect_platform_metadata
 
@@ -126,6 +132,15 @@ class Runner:
             ],
         }
         summary_path = run_output_dir / "run-summary.json"
+        validate_run_summary_payload(summary_payload, source=summary_path)
+        case_payloads = [
+            (
+                record.result_path,
+                json.loads(record.result_path.read_text(encoding="utf-8")),
+            )
+            for record in case_records
+        ]
+        validate_run_summary_consistency(summary_payload, case_payloads, source=summary_path)
         summary_path.write_text(
             json.dumps(summary_payload, indent=2, ensure_ascii=False) + "\n",
             encoding="utf-8",
@@ -212,7 +227,7 @@ class Runner:
                 encoding="utf-8",
             )
 
-        normalized_payload = self._normalize_existing_result(
+        validated_payload = self._load_and_validate_result(
             result_path=result_path,
             case=case,
             run_id=run_id,
@@ -221,14 +236,14 @@ class Runner:
             duration_ms=duration_ms,
         )
         result_path.write_text(
-            json.dumps(normalized_payload, indent=2, ensure_ascii=False) + "\n",
+            json.dumps(validated_payload, indent=2, ensure_ascii=False) + "\n",
             encoding="utf-8",
         )
         return CaseRunRecord(
             case_id=case.case_id,
-            status=normalized_payload["result"]["status"],
+            status=validated_payload["result"]["status"],
             result_path=result_path,
-            duration_ms=normalized_payload["result"]["duration_ms"],
+            duration_ms=validated_payload["result"]["duration_ms"],
         )
 
     def _build_scenario_payload(
@@ -398,7 +413,7 @@ class Runner:
             },
         }
 
-    def _normalize_existing_result(
+    def _load_and_validate_result(
         self,
         *,
         result_path: Path,
@@ -408,42 +423,69 @@ class Runner:
         target: TargetConfig,
         duration_ms: int,
     ) -> dict[str, Any]:
-        payload = json.loads(result_path.read_text(encoding="utf-8"))
-        payload.setdefault("schema_version", SCHEMA_VERSION)
-        payload["run_id"] = payload.get("run_id") or run_id
-        payload["platform"] = payload.get("platform") or asdict(platform_metadata)
-        payload["target"] = payload.get("target") or {
+        try:
+            payload = json.loads(result_path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError as exc:
+            raise ArtifactValidationError(
+                "case result artifact",
+                result_path,
+                [
+                    "Target wrote invalid JSON "
+                    f"(line {exc.lineno}, column {exc.colno}): {exc.msg}"
+                ],
+            ) from exc
+
+        if not isinstance(payload, dict):
+            raise ArtifactValidationError(
+                "case result artifact",
+                result_path,
+                [f"Target result root must be a JSON object, got {type(payload).__name__}."],
+            )
+
+        validate_case_result_payload(
+            payload,
+            source=result_path,
+            expected_run_id=run_id,
+            expected_case_id=case.case_id,
+            expected_automation_level=case.automation_level,
+        )
+
+        result_duration = payload["result"]["duration_ms"]
+        if result_duration > max(duration_ms + 1000, duration_ms * 2 + 1000):
+            raise ArtifactValidationError(
+                "case result artifact",
+                result_path,
+                [
+                    "result.duration_ms is implausibly larger than the runner-observed case duration "
+                    f"({result_duration} ms reported vs {duration_ms} ms observed)."
+                ],
+            )
+
+        expected_target = {
             "name": target.name,
             "version": target.version,
             "sample_app": target.sample_app,
         }
-        payload["case"] = {
-            "id": payload.get("case", {}).get("id", case.case_id),
-            "name": payload.get("case", {}).get("name", case.name),
-            "automation_level": payload.get("case", {}).get(
-                "automation_level", case.automation_level
-            ),
-        }
-        payload.setdefault("result", {})
-        payload["result"]["duration_ms"] = max(
-            0,
-            int(payload["result"].get("duration_ms", duration_ms)),
-        )
-        payload["result"].setdefault("status", "inconclusive")
-        payload["result"].setdefault("returned_resource_type", "unknown")
-        payload["result"].setdefault("returned_value_example", None)
-        payload["result"].setdefault("can_read", None)
-        payload["result"].setdefault("can_write", None)
-        payload["result"].setdefault("error_code", None)
-        payload["result"]["notes"] = _normalize_notes(payload["result"].get("notes", []))
-        if payload["result"]["status"] not in RESULT_STATUSES:
-            payload["result"]["notes"].append(
-                {
-                    "code": "status_normalized",
-                    "message": "Runner normalized an unsupported target status to inconclusive.",
-                }
+        if payload.get("target") != expected_target:
+            raise ArtifactValidationError(
+                "case result artifact",
+                result_path,
+                [
+                    "target block must match the invoked target configuration. "
+                    f"Expected {expected_target}, got {payload.get('target')}."
+                ],
             )
-            payload["result"]["status"] = "inconclusive"
+
+        if payload.get("platform") != asdict(platform_metadata):
+            raise ArtifactValidationError(
+                "case result artifact",
+                result_path,
+                [
+                    "platform block must match the platform metadata captured for the run. "
+                    f"Expected {asdict(platform_metadata)}, got {payload.get('platform')}."
+                ],
+            )
+
         return payload
 
 
@@ -464,23 +506,6 @@ def build_target_from_command(
         working_directory=Path(working_directory) if working_directory else None,
         environment=environment or {},
     )
-
-
-def _normalize_notes(notes: Any) -> list[dict[str, str]]:
-    if not isinstance(notes, list):
-        return []
-    normalized: list[dict[str, str]] = []
-    for index, note in enumerate(notes, start=1):
-        if isinstance(note, dict):
-            normalized.append(
-                {
-                    "code": str(note.get("code", f"note_{index}")),
-                    "message": str(note.get("message", "")),
-                }
-            )
-        else:
-            normalized.append({"code": f"note_{index}", "message": str(note)})
-    return normalized
 
 
 def _generate_run_id(target_name: str) -> str:
