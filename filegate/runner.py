@@ -293,7 +293,13 @@ class Runner:
         timeout_seconds: float,
         cancellation_event: Event | None,
     ) -> dict[str, Any]:
-        command = [*target.command, "--scenario", str(scenario_path), "--output", str(output_path)]
+        command = [
+            *target.command,
+            "--scenario",
+            str(scenario_path.resolve()),
+            "--output",
+            str(output_path.resolve()),
+        ]
         process = subprocess.Popen(
             command,
             cwd=target.working_directory,
