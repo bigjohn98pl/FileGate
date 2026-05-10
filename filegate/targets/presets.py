@@ -29,6 +29,20 @@ def build_python_tkinter_target(repo_root: Path | None = None) -> TargetConfig:
     )
 
 
+def build_linux_portal_target(repo_root: Path | None = None) -> TargetConfig:
+    """Build a TargetConfig for the bundled Linux portal sample target."""
+    root = (repo_root or Path(__file__).resolve().parents[2]).resolve()
+    sample_dir = root / "samples" / "linux-portal"
+    app_path = sample_dir / "app.py"
+    return TargetConfig(
+        name="linux-portal",
+        command=["python3", str(app_path)],
+        sample_app="samples/linux-portal",
+        version="0.1",
+        working_directory=root,
+    )
+
+
 def list_preset_targets() -> list[dict[str, str]]:
     """Return metadata for known bundled target presets."""
     return [
@@ -44,6 +58,10 @@ def list_preset_targets() -> list[dict[str, str]]:
             "id": "electron",
             "description": "Bundled Electron sample target.",
         },
+        {
+            "id": "linux-portal",
+            "description": "Bundled Linux XDG Desktop Portal sample target.",
+        },
     ]
 
 
@@ -56,4 +74,6 @@ def build_preset_target(target_id: str) -> TargetConfig:
         return build_python_tkinter_target()
     if normalized == "electron":
         return build_electron_target()
+    if normalized == "linux-portal":
+        return build_linux_portal_target()
     raise KeyError(f"Unknown target preset '{target_id}'.")

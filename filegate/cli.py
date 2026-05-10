@@ -24,7 +24,7 @@ from filegate.reporting import (
 from filegate.runner import RunRequest, Runner, build_target_from_command
 from filegate.targets import build_preset_target, list_preset_targets
 
-SAMPLE_TARGET_IDS = ("electron", "python-tkinter")
+SAMPLE_TARGET_IDS = ("electron", "python-tkinter", "linux-portal")
 
 
 @click.group(

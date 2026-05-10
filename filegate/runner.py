@@ -31,6 +31,7 @@ from filegate.cases import (
     SimulationFixtureSpec,
 )
 from filegate.environment import PlatformMetadata, detect_platform_metadata
+from filegate.linux_portal import detect_sandbox_metadata, probe_portal_metadata
 
 SCHEMA_VERSION = "0.1"
 RESULT_STATUSES = {
@@ -139,6 +140,8 @@ class Runner:
             # multi_step cases use the dialog_selection builder for each individual step;
             # orchestration metadata is injected on top of the per-step payload by _run_target_step.
             "multi_step": self._build_dialog_selection_scenario,
+            # portal_selection extends dialog_selection with XDG portal and sandbox capability metadata.
+            "portal_selection": self._build_portal_selection_scenario,
         }
 
     def run(self, request: RunRequest) -> RunSummary:
@@ -404,6 +407,73 @@ class Runner:
                 ],
             },
         }
+
+    def _build_portal_selection_scenario(self, context: ScenarioContext) -> dict[str, Any]:
+        """Extend the dialog-selection scenario with XDG portal and sandbox metadata.
+
+        Portal cases need ``execution_context`` with live portal/sandbox probes
+        so the target can record capability observations without guessing from
+        ``case.id``.  Simulation fixtures that carry ``use_uri=True`` in their
+        ``metadata`` dict additionally get a ``selected_uri`` injected next to
+        the standard ``selected_path``.
+
+        Degrades gracefully: when probing fails (no gdbus, no D-Bus session),
+        the availability flags are ``False`` and the scenario is still valid.
+        """
+        base_payload = self._build_dialog_selection_scenario(context)
+
+        portal_ext = dict(context.case.extensions.get("portal") or {})
+        portal_expected = bool(portal_ext.get("portal_expected", False))
+        sandbox_expected = bool(portal_ext.get("sandbox_expected", False))
+
+        try:
+            portal_meta = probe_portal_metadata().to_dict()
+        except Exception:  # pragma: no cover - defensive against env failures
+            portal_meta = {
+                "available": False,
+                "gdbus_available": False,
+                "dbus_session_available": False,
+                "service_available": False,
+                "filechooser_interface_available": False,
+                "filechooser_version": None,
+                "supports_open_file": False,
+                "supports_save_file": False,
+                "notes": ["Portal probe raised an unexpected error; degrading gracefully."],
+            }
+
+        try:
+            sandbox_meta = detect_sandbox_metadata().to_dict()
+        except Exception:  # pragma: no cover - defensive against env failures
+            sandbox_meta = {
+                "sandbox": "none",
+                "flatpak_id": None,
+                "flatpak_info_path": None,
+                "filesystem_permissions": [],
+                "host_home_access": "unknown",
+                "documents_portal_mount": None,
+                "notes": ["Sandbox probe raised an unexpected error; degrading gracefully."],
+            }
+
+        base_payload["execution_context"] = {
+            "portal_expected": portal_expected,
+            "sandbox_expected": sandbox_expected,
+            "portal": portal_meta,
+            "sandbox": sandbox_meta,
+        }
+
+        # Inject URI-form selected_uri for fixtures that advertise use_uri in metadata.
+        simulation = base_payload.get("simulation", {})
+        if simulation.get("enabled"):
+            fixtures_root = context.simulation_root
+            for fixture_spec in context.case.simulation.fixtures:
+                if fixture_spec.metadata.get("use_uri") and fixture_spec.is_selection_fixture:
+                    absolute_path = (fixtures_root / fixture_spec.relative_path).resolve()
+                    if absolute_path.exists() or not fixture_spec.materialize:
+                        simulation["selected_uri"] = absolute_path.as_uri()
+                        # selected_path already set by the base builder; keep both for comparison.
+                    break
+
+        return base_payload
 
     def _prepare_simulation_fixtures(self, context: ScenarioContext) -> list[PreparedFixture]:
         if not context.simulation_enabled:
@@ -1040,6 +1110,7 @@ class Runner:
                 "notes": notes,
             },
         }
+
 
     def _invoke_target(
         self,
