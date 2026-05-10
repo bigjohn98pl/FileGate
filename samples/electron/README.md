@@ -8,6 +8,11 @@ It supports:
 - `open_file_multiple`
 - `open_folder`
 - `save_file_new`
+- `filter_pdf_only`
+- `filter_images_only`
+- `filter_multiple_mime_types`
+- `extension_auto_append_on_save`
+- `wrong_extension_selected`
 - `cancel_open_dialog`
 - `cancel_save_dialog`
 
@@ -76,12 +81,14 @@ Supported dialog fields:
 - Expected cancellation returns `result.status = "pass"` and `result.error_code = "USER_CANCELLED"`.
 - Unexpected cancellation returns `result.status = "fail"` and `result.error_code = "USER_CANCELLED"`.
 - Selection-count mismatches return `result.status = "fail"` with structured notes.
+- Filter-oriented cases add structured notes describing configured filters, intended filter selection, and whether the returned extension matched the expected filter set.
+- Save-extension cases add structured notes describing whether the configured extension was auto-appended, preserved, or overridden.
 - Interactive native dialog results may include notes documenting platform/backend differences.
 - `returned_resource_type` is currently `path` for baseline Electron cases.
 
 ## Known differences
 
-Electron delegates to native dialog backends, so behavior may vary by platform, display server, or desktop environment. When that happens, record the difference in result notes rather than forcing a failure if schema compatibility is preserved.
+Electron delegates to native dialog backends, so behavior may vary by platform, display server, or desktop environment. In particular, active-filter choice and save-extension auto-append behavior are not exposed as deterministic native API signals. When that happens, FileGate records best-effort observations from the returned path and surfaces the limitation in result notes rather than forcing a failure if schema compatibility is preserved.
 
 ## Extension points
 

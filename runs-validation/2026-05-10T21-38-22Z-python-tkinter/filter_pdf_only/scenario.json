@@ -1,0 +1,49 @@
+{
+  "run_id": "2026-05-10T21-38-22Z-python-tkinter",
+  "platform": {
+    "os": "linux",
+    "distribution": "Fedora Linux",
+    "version": "43",
+    "desktop_environment": "KDE",
+    "session_type": "wayland",
+    "sandbox": "none"
+  },
+  "target": {
+    "name": "python-tkinter",
+    "version": "unknown",
+    "sample_app": "samples/python-tkinter"
+  },
+  "case": {
+    "id": "filter_pdf_only",
+    "name": "Filter PDF only",
+    "automation_level": "semi_automatic"
+  },
+  "dialog": {
+    "type": "open_file",
+    "title": "Filter PDF only",
+    "filetypes": [
+      [
+        "PDF documents",
+        "*.pdf"
+      ],
+      [
+        "All files",
+        "*.*"
+      ]
+    ]
+  },
+  "expectation": {
+    "cancel_is_expected": false,
+    "expected_selection_count": 1,
+    "selected_filter_label": "PDF documents",
+    "allowed_extensions": [
+      ".pdf"
+    ],
+    "selection_should_match_filter": true
+  },
+  "simulation": {
+    "enabled": true,
+    "selected_path": "/home/tynusz/.cline/worktrees/4437d/FileGate/runs-validation/2026-05-10T21-38-22Z-python-tkinter/filter_pdf_only/simulation/selected-document.pdf",
+    "selected_filter_label": "PDF documents"
+  }
+}

@@ -45,6 +45,20 @@ def build_comparison_payload(left_run_dir: Path, right_run_dir: Path) -> dict[st
                     "Returned resource types differ between targets.",
                 )
             )
+        if left_case and right_case and str(left_result.get("returned_value_example")) != str(right_result.get("returned_value_example")):
+            comparison_notes.append(
+                _note(
+                    "returned_value_difference",
+                    "Returned value examples differ between targets; review extension/filter outcomes before treating this as incompatibility.",
+                )
+            )
+        if left_case and right_case and _format_notes(left_result.get("notes", [])) != _format_notes(right_result.get("notes", [])):
+            comparison_notes.append(
+                _note(
+                    "note_difference",
+                    "Structured notes differ between targets; this often captures framework-specific filter or save-extension behavior.",
+                )
+            )
 
         comparisons.append(
             {
@@ -183,6 +197,7 @@ def _project_case(case: dict[str, Any] | None) -> dict[str, Any] | None:
         "status": result.get("status"),
         "duration_ms": result.get("duration_ms"),
         "returned_resource_type": result.get("returned_resource_type"),
+        "returned_value_example": result.get("returned_value_example"),
         "error_code": result.get("error_code"),
         "notes": result.get("notes", []),
     }

@@ -56,6 +56,31 @@ CASE_DEFAULTS: dict[str, dict[str, Any]] = {
         "automation_level": "semi_automatic",
         "dialog_type": "save_file",
     },
+    "filter_pdf_only": {
+        "name": "Filter PDF only",
+        "automation_level": "semi_automatic",
+        "dialog_type": "open_file",
+    },
+    "filter_images_only": {
+        "name": "Filter images only",
+        "automation_level": "semi_automatic",
+        "dialog_type": "open_file",
+    },
+    "filter_multiple_mime_types": {
+        "name": "Filter multiple MIME types",
+        "automation_level": "semi_automatic",
+        "dialog_type": "open_file",
+    },
+    "extension_auto_append_on_save": {
+        "name": "Extension auto append on save",
+        "automation_level": "semi_automatic",
+        "dialog_type": "save_file",
+    },
+    "wrong_extension_selected": {
+        "name": "Wrong extension selected",
+        "automation_level": "semi_automatic",
+        "dialog_type": "save_file",
+    },
     "save_file_overwrite": {
         "name": "Save file overwrite",
         "automation_level": "semi_automatic",
@@ -81,6 +106,7 @@ class SelectionResult:
     values: list[str]
     cancelled: bool
     returned_resource_type: str
+    notes: list[dict[str, str]] | None = None
 
 
 def parse_args() -> argparse.Namespace:
@@ -175,7 +201,15 @@ def detect_sandbox() -> str:
     return "none"
 
 
-def build_target_payload() -> dict[str, Any]:
+def build_target_payload(scenario: dict[str, Any]) -> dict[str, Any]:
+    incoming = scenario.get("target") or {}
+    if incoming.get("name") and incoming.get("version") and incoming.get("sample_app"):
+        return {
+            "name": str(incoming["name"]),
+            "version": str(incoming["version"]),
+            "sample_app": str(incoming["sample_app"]),
+        }
+
     version = "unknown"
     if tk is not None:
         version = str(getattr(tk, "TkVersion", "unknown"))
@@ -249,12 +283,13 @@ def execute_selection(scenario: dict[str, Any], dialog_type: str) -> SelectionRe
         values=values,
         cancelled=len(values) == 0,
         returned_resource_type="path" if values else "unknown",
+        notes=[],
     )
 
 
 def execute_simulation(simulation: dict[str, Any], dialog_type: str) -> SelectionResult:
     if simulation.get("cancel"):
-        return SelectionResult(values=[], cancelled=True, returned_resource_type="unknown")
+        return SelectionResult(values=[], cancelled=True, returned_resource_type="unknown", notes=[])
 
     if dialog_type == "open_files":
         selected_values = simulation.get("selected_paths") or []
@@ -263,10 +298,19 @@ def execute_simulation(simulation: dict[str, Any], dialog_type: str) -> Selectio
         selected_values = [selected_value] if selected_value else []
 
     values = [str(value) for value in selected_values if value]
+    notes: list[dict[str, str]] = []
+    if simulation.get("selected_filter_label"):
+        notes.append(
+            {
+                "code": "SELECTED_FILTER_LABEL",
+                "message": f"Simulation recorded selected filter label '{simulation['selected_filter_label']}'.",
+            }
+        )
     return SelectionResult(
         values=values,
         cancelled=len(values) == 0,
         returned_resource_type="path" if values else "unknown",
+        notes=notes,
     )
 
 
@@ -349,6 +393,142 @@ def validate_selection_count(
     return issues
 
 
+def evaluate_filter_expectations(
+    scenario: dict[str, Any],
+    dialog_type: str,
+    selection: SelectionResult,
+) -> tuple[list[dict[str, str]], str | None]:
+    dialog = scenario.get("dialog", {})
+    expectation = scenario.get("expectation", {})
+    notes: list[dict[str, str]] = []
+
+    filetypes = normalize_filetypes(dialog.get("filetypes"))
+    if filetypes:
+        configured = ", ".join(f"{label} ({pattern})" for label, pattern in filetypes)
+        notes.append(
+            {
+                "code": "CONFIGURED_FILTERS",
+                "message": f"Configured dialog filters: {configured}.",
+            }
+        )
+
+    selected_filter_label = expectation.get("selected_filter_label")
+    if selected_filter_label:
+        notes.append(
+            {
+                "code": "FILTER_INTENT",
+                "message": f"Scenario exercised filter intent '{selected_filter_label}'.",
+            }
+        )
+
+    if dialog_type != "open_file" or selection.cancelled or not selection.values:
+        return notes, None
+
+    allowed_extensions = expectation.get("allowed_extensions") or []
+    if not allowed_extensions:
+        return notes, None
+
+    selected_path = Path(selection.values[0])
+    selected_extension = selected_path.suffix.lower()
+    normalized_allowed = {str(value).lower() for value in allowed_extensions}
+    if selected_extension in normalized_allowed:
+        notes.append(
+            {
+                "code": "FILTER_MATCHED_SELECTION",
+                "message": (
+                    f"Selected file extension '{selected_extension}' matched the allowed filter set "
+                    f"{sorted(normalized_allowed)}."
+                ),
+            }
+        )
+        return notes, None
+
+    notes.append(
+        {
+            "code": "FILTER_MISMATCH",
+            "message": (
+                f"Selected file extension '{selected_extension or '(none)'}' did not match the allowed filter set "
+                f"{sorted(normalized_allowed)}. Native dialogs may allow manual override or expose filters as advisory only."
+            ),
+        }
+    )
+    return notes, "warn"
+
+
+def evaluate_save_expectations(
+    scenario: dict[str, Any],
+    dialog_type: str,
+    selection: SelectionResult,
+) -> tuple[list[dict[str, str]], str | None]:
+    expectation = scenario.get("expectation", {})
+    notes: list[dict[str, str]] = []
+
+    if dialog_type != "save_file" or selection.cancelled or not selection.values:
+        return notes, None
+
+    selected_path = Path(selection.values[0])
+    selected_extension = selected_path.suffix.lower()
+    expected_extension = str(expectation.get("expected_extension") or "").lower()
+
+    if expectation.get("expect_auto_append") and expected_extension:
+        if selected_extension == expected_extension:
+            notes.append(
+                {
+                    "code": "AUTO_APPEND_OBSERVED",
+                    "message": (
+                        f"Returned save path used extension '{selected_extension}', matching the configured default extension."
+                    ),
+                }
+            )
+            return notes, None
+
+        notes.append(
+            {
+                "code": "AUTO_APPEND_NOT_OBSERVED",
+                "message": (
+                    f"Returned save path used extension '{selected_extension or '(none)'}' instead of the configured default extension '{expected_extension}'. "
+                    "Some dialog backends treat default extensions as advisory only."
+                ),
+            }
+        )
+        return notes, "warn"
+
+    mismatched_extension = str(expectation.get("mismatched_extension") or "").lower()
+    if mismatched_extension and expected_extension:
+        if selected_extension == mismatched_extension:
+            notes.append(
+                {
+                    "code": "WRONG_EXTENSION_PRESERVED",
+                    "message": (
+                        f"Returned save path preserved the mismatched extension '{mismatched_extension}' instead of coercing to '{expected_extension}'."
+                    ),
+                }
+            )
+            return notes, "warn"
+        if selected_extension == expected_extension:
+            notes.append(
+                {
+                    "code": "WRONG_EXTENSION_CORRECTED",
+                    "message": (
+                        f"Returned save path used the configured extension '{expected_extension}' rather than the mismatched extension '{mismatched_extension}'."
+                    ),
+                }
+            )
+            return notes, None
+
+        notes.append(
+            {
+                "code": "WRONG_EXTENSION_ALTERNATE_RESULT",
+                "message": (
+                    f"Returned save path used extension '{selected_extension or '(none)'}', which differs from both the configured '{expected_extension}' and mismatched '{mismatched_extension}' extensions."
+                ),
+            }
+        )
+        return notes, "warn"
+
+    return notes, None
+
+
 def build_result_payload(
     scenario: dict[str, Any],
     case_payload: dict[str, Any],
@@ -363,7 +543,7 @@ def build_result_payload(
         expectation.get("cancel_is_expected", case_defaults.get("cancel_expected", False))
     )
 
-    notes: list[dict[str, str]] = []
+    notes: list[dict[str, str]] = list(selection.notes or [])
     if scenario.get("simulation", {}).get("enabled"):
         notes.append(
             {
@@ -409,6 +589,24 @@ def build_result_payload(
     selection_count_issues = validate_selection_count(scenario, case_payload, selection)
     notes.extend(selection_count_issues)
 
+    filter_notes, filter_status = evaluate_filter_expectations(scenario, dialog_type, selection)
+    notes.extend(filter_notes)
+    save_notes, save_status = evaluate_save_expectations(scenario, dialog_type, selection)
+    notes.extend(save_notes)
+
+    if not scenario.get("simulation", {}).get("enabled") and (
+        case_payload["id"].startswith("filter_") or case_payload["id"] in {"extension_auto_append_on_save", "wrong_extension_selected"}
+    ):
+        notes.append(
+            {
+                "code": "NATIVE_DIALOG_LIMITATION",
+                "message": (
+                    "Tk native dialogs do not expose deterministic APIs for reading the actively chosen filter or proving whether the backend auto-appended an extension; "
+                    "results should be interpreted as best-effort observations from the returned path."
+                ),
+            }
+        )
+
     if cancel_expected:
         notes.append(
             {
@@ -419,6 +617,8 @@ def build_result_payload(
         status = "fail"
     elif selection_count_issues:
         status = "fail"
+    elif filter_status == "warn" or save_status == "warn":
+        status = "warn"
     else:
         status = "pass"
 
@@ -499,13 +699,13 @@ def main() -> int:
         "schema_version": SCHEMA_VERSION,
         "run_id": scenario.get("run_id") or generate_run_id(TARGET_NAME),
         "platform": build_platform_payload(scenario),
-        "target": build_target_payload(),
+        "target": build_target_payload(scenario),
         "case": case_payload,
         "result": build_result_payload(
             scenario=scenario,
             case_payload=case_payload,
             dialog_type=dialog_type,
-            selection=selection or SelectionResult([], True, "unknown"),
+            selection=selection or SelectionResult([], True, "unknown", []),
             duration_ms=duration_ms,
             error=execution_error,
         ),

@@ -1,0 +1,49 @@
+{
+  "run_id": "2026-05-10T21-38-22Z-python-tkinter",
+  "platform": {
+    "os": "linux",
+    "distribution": "Fedora Linux",
+    "version": "43",
+    "desktop_environment": "KDE",
+    "session_type": "wayland",
+    "sandbox": "none"
+  },
+  "target": {
+    "name": "python-tkinter",
+    "version": "unknown",
+    "sample_app": "samples/python-tkinter"
+  },
+  "case": {
+    "id": "wrong_extension_selected",
+    "name": "Wrong extension selected",
+    "automation_level": "semi_automatic"
+  },
+  "dialog": {
+    "type": "save_file",
+    "title": "Wrong extension selected",
+    "initialfile": "mismatched-extension",
+    "defaultextension": ".txt",
+    "filetypes": [
+      [
+        "Text files",
+        "*.txt"
+      ],
+      [
+        "PDF documents",
+        "*.pdf"
+      ]
+    ]
+  },
+  "expectation": {
+    "cancel_is_expected": false,
+    "selected_filter_label": "Text files",
+    "expected_extension": ".txt",
+    "mismatched_extension": ".pdf",
+    "allow_mismatched_extension": true
+  },
+  "simulation": {
+    "enabled": true,
+    "selected_path": "/home/tynusz/.cline/worktrees/4437d/FileGate/runs-validation/2026-05-10T21-38-22Z-python-tkinter/wrong_extension_selected/simulation/mismatched-extension.pdf",
+    "selected_filter_label": "Text files"
+  }
+}

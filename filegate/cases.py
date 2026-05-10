@@ -359,6 +359,222 @@ MVP_CASES: tuple[CaseDefinition, ...] = (
         ),
     ),
     CaseDefinition(
+        case_id="filter_pdf_only",
+        name="Filter PDF only",
+        automation_level="semi_automatic",
+        objective="Verify that open dialogs can be configured with a PDF-only file filter and report the observed selection behavior.",
+        preconditions=("Target executable is available.",),
+        steps=("Run the PDF-only open file scenario.", "Collect the returned resource and filter observations."),
+        expected_result="A selected file is returned with structured notes describing the configured PDF filter and any observed framework differences.",
+        artifacts=DEFAULT_ARTIFACTS,
+        dialog=DialogSpec(
+            dialog_type="open_file",
+            filetypes=(
+                ("PDF documents", "*.pdf"),
+                ("All files", "*.*"),
+            ),
+        ),
+        expectation=ExpectationSpec(
+            expected_selection_count=1,
+            options={
+                "selected_filter_label": "PDF documents",
+                "allowed_extensions": [".pdf"],
+                "selection_should_match_filter": True,
+            },
+        ),
+        simulation=SimulationSpec(
+            fixtures=(
+                SimulationFixtureSpec(
+                    fixture_id="selected_document",
+                    relative_path="selected-document.pdf",
+                    role="selection",
+                    content="%PDF-1.4\n% FileGate PDF filter fixture\n",
+                ),
+            ),
+            options={"selected_filter_label": "PDF documents"},
+        ),
+        family="file_type_filters",
+        tags=("file_type_filters", "open", "pdf", "filter"),
+        extensions=_extension_contract(
+            path={"expected_resource_kind": "file", "selection_mode": "single"},
+            filters={"configured_filter": "pdf_only", "expected_extension": ".pdf"},
+        ),
+    ),
+    CaseDefinition(
+        case_id="filter_images_only",
+        name="Filter images only",
+        automation_level="semi_automatic",
+        objective="Verify that open dialogs can be configured with an image-only file filter and report the observed selection behavior.",
+        preconditions=("Target executable is available.",),
+        steps=("Run the image-only open file scenario.", "Collect the returned resource and filter observations."),
+        expected_result="A selected file is returned with structured notes describing the configured image filter and any observed framework differences.",
+        artifacts=DEFAULT_ARTIFACTS,
+        dialog=DialogSpec(
+            dialog_type="open_file",
+            filetypes=(
+                ("Image files", "*.png;*.jpg;*.jpeg;*.gif"),
+                ("All files", "*.*"),
+            ),
+        ),
+        expectation=ExpectationSpec(
+            expected_selection_count=1,
+            options={
+                "selected_filter_label": "Image files",
+                "allowed_extensions": [".png", ".jpg", ".jpeg", ".gif"],
+                "selection_should_match_filter": True,
+            },
+        ),
+        simulation=SimulationSpec(
+            fixtures=(
+                SimulationFixtureSpec(
+                    fixture_id="selected_image",
+                    relative_path="selected-image.png",
+                    role="selection",
+                    content="PNG\r\nFileGate image filter fixture\n",
+                ),
+            ),
+            options={"selected_filter_label": "Image files"},
+        ),
+        family="file_type_filters",
+        tags=("file_type_filters", "open", "image", "filter"),
+        extensions=_extension_contract(
+            path={"expected_resource_kind": "file", "selection_mode": "single"},
+            filters={"configured_filter": "images_only", "allowed_extensions": [".png", ".jpg", ".jpeg", ".gif"]},
+        ),
+    ),
+    CaseDefinition(
+        case_id="filter_multiple_mime_types",
+        name="Filter multiple MIME types",
+        automation_level="semi_automatic",
+        objective="Verify that open dialogs can be configured with multiple file-type filters and report which configured filter intent was exercised.",
+        preconditions=("Target executable is available.",),
+        steps=("Run the multi-filter open file scenario.", "Collect the returned resource and filter observations."),
+        expected_result="A selected file is returned with structured notes describing the configured multi-filter set and any observed framework differences.",
+        artifacts=DEFAULT_ARTIFACTS,
+        dialog=DialogSpec(
+            dialog_type="open_file",
+            filetypes=(
+                ("PDF documents", "*.pdf"),
+                ("Image files", "*.png;*.jpg;*.jpeg"),
+                ("Text files", "*.txt;*.md"),
+            ),
+        ),
+        expectation=ExpectationSpec(
+            expected_selection_count=1,
+            options={
+                "selected_filter_label": "Image files",
+                "allowed_extensions": [".png", ".jpg", ".jpeg"],
+                "selection_should_match_filter": True,
+            },
+        ),
+        simulation=SimulationSpec(
+            fixtures=(
+                SimulationFixtureSpec(
+                    fixture_id="selected_image",
+                    relative_path="selected-image.jpg",
+                    role="selection",
+                    content="JPEG FileGate multi-filter fixture\n",
+                ),
+            ),
+            options={"selected_filter_label": "Image files"},
+        ),
+        family="file_type_filters",
+        tags=("file_type_filters", "open", "multi_filter"),
+        extensions=_extension_contract(
+            path={"expected_resource_kind": "file", "selection_mode": "single"},
+            filters={"configured_filter": "multiple_mime_types", "exercised_filter": "image_files"},
+        ),
+    ),
+    CaseDefinition(
+        case_id="extension_auto_append_on_save",
+        name="Extension auto append on save",
+        automation_level="semi_automatic",
+        objective="Verify whether a save dialog appends the configured default extension when the user omits it.",
+        preconditions=("Target executable is available.",),
+        steps=("Run the save scenario with a configured default extension.", "Collect the returned save path and extension observations."),
+        expected_result="The returned save path and result notes make the observed auto-append behavior explicit.",
+        artifacts=DEFAULT_ARTIFACTS,
+        dialog=DialogSpec(
+            dialog_type="save_file",
+            initialfile="auto-append-target",
+            defaultextension=".txt",
+            filetypes=(
+                ("Text files", "*.txt"),
+                ("All files", "*.*"),
+            ),
+        ),
+        expectation=ExpectationSpec(
+            options={
+                "selected_filter_label": "Text files",
+                "expected_extension": ".txt",
+                "expect_auto_append": True,
+            },
+        ),
+        simulation=SimulationSpec(
+            fixtures=(
+                SimulationFixtureSpec(
+                    fixture_id="save_destination",
+                    relative_path="auto-append-target.txt",
+                    role="selection",
+                    materialize=False,
+                ),
+            ),
+            options={"selected_filter_label": "Text files"},
+        ),
+        family="save_semantics",
+        tags=("save_semantics", "save", "extension", "auto_append"),
+        extensions=_extension_contract(
+            path={"expected_resource_kind": "file", "selection_mode": "single"},
+            filters={"configured_filter": "text_files", "default_extension": ".txt"},
+            persistence={"expectation": "not_evaluated"},
+        ),
+    ),
+    CaseDefinition(
+        case_id="wrong_extension_selected",
+        name="Wrong extension selected",
+        automation_level="semi_automatic",
+        objective="Verify how a save dialog behaves when the chosen filename extension differs from the selected filter/default extension.",
+        preconditions=("Target executable is available.",),
+        steps=("Run the save scenario with an intentionally mismatched extension.", "Collect the returned save path and mismatch observations."),
+        expected_result="The returned save path and result notes explicitly document whether the target preserved, replaced, or supplemented the mismatched extension.",
+        artifacts=DEFAULT_ARTIFACTS,
+        dialog=DialogSpec(
+            dialog_type="save_file",
+            initialfile="mismatched-extension",
+            defaultextension=".txt",
+            filetypes=(
+                ("Text files", "*.txt"),
+                ("PDF documents", "*.pdf"),
+            ),
+        ),
+        expectation=ExpectationSpec(
+            options={
+                "selected_filter_label": "Text files",
+                "expected_extension": ".txt",
+                "mismatched_extension": ".pdf",
+                "allow_mismatched_extension": True,
+            },
+        ),
+        simulation=SimulationSpec(
+            fixtures=(
+                SimulationFixtureSpec(
+                    fixture_id="save_destination",
+                    relative_path="mismatched-extension.pdf",
+                    role="selection",
+                    materialize=False,
+                ),
+            ),
+            options={"selected_filter_label": "Text files"},
+        ),
+        family="save_semantics",
+        tags=("save_semantics", "save", "extension", "mismatch"),
+        extensions=_extension_contract(
+            path={"expected_resource_kind": "file", "selection_mode": "single"},
+            filters={"configured_filter": "text_files", "mismatched_extension": ".pdf"},
+            persistence={"expectation": "not_evaluated"},
+        ),
+    ),
+    CaseDefinition(
         case_id="cancel_open_dialog",
         name="Cancel open dialog",
         automation_level="semi_automatic",

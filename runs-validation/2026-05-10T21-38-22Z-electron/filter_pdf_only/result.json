@@ -1,0 +1,53 @@
+{
+  "schema_version": "0.1",
+  "run_id": "2026-05-10T21-38-22Z-electron",
+  "platform": {
+    "os": "linux",
+    "distribution": "Fedora Linux",
+    "version": "43",
+    "desktop_environment": "KDE",
+    "session_type": "wayland",
+    "sandbox": "none"
+  },
+  "target": {
+    "name": "electron",
+    "version": "^35.5.1",
+    "sample_app": "samples/electron"
+  },
+  "case": {
+    "id": "filter_pdf_only",
+    "name": "Filter PDF only",
+    "automation_level": "semi_automatic"
+  },
+  "result": {
+    "status": "pass",
+    "duration_ms": 70,
+    "returned_resource_type": "path",
+    "returned_value_example": "/home/tynusz/.cline/worktrees/4437d/FileGate/runs-validation/2026-05-10T21-38-22Z-electron/filter_pdf_only/simulation/selected-document.pdf",
+    "can_read": true,
+    "can_write": true,
+    "error_code": null,
+    "notes": [
+      {
+        "code": "SELECTED_FILTER_LABEL",
+        "message": "Simulation recorded selected filter label 'PDF documents'."
+      },
+      {
+        "code": "SIMULATED",
+        "message": "Result was produced using the documented simulation mode rather than an interactive Electron dialog."
+      },
+      {
+        "code": "CONFIGURED_FILTERS",
+        "message": "Configured dialog filters: PDF documents (*.pdf), All files (*.*)."
+      },
+      {
+        "code": "FILTER_INTENT",
+        "message": "Scenario exercised filter intent 'PDF documents'."
+      },
+      {
+        "code": "FILTER_MATCHED_SELECTION",
+        "message": "Selected file extension '.pdf' matched the allowed filter set [\".pdf\"]."
+      }
+    ]
+  }
+}

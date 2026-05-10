@@ -23,6 +23,11 @@ const CASE_DEFAULTS = {
   open_file_multiple: { name: "Open file multiple", automation_level: "semi_automatic", dialog_type: "open_files" },
   open_folder: { name: "Open folder", automation_level: "semi_automatic", dialog_type: "open_folder" },
   save_file_new: { name: "Save file new", automation_level: "semi_automatic", dialog_type: "save_file" },
+  filter_pdf_only: { name: "Filter PDF only", automation_level: "semi_automatic", dialog_type: "open_file" },
+  filter_images_only: { name: "Filter images only", automation_level: "semi_automatic", dialog_type: "open_file" },
+  filter_multiple_mime_types: { name: "Filter multiple MIME types", automation_level: "semi_automatic", dialog_type: "open_file" },
+  extension_auto_append_on_save: { name: "Extension auto append on save", automation_level: "semi_automatic", dialog_type: "save_file" },
+  wrong_extension_selected: { name: "Wrong extension selected", automation_level: "semi_automatic", dialog_type: "save_file" },
   save_file_overwrite: { name: "Save file overwrite", automation_level: "semi_automatic", dialog_type: "save_file" },
   cancel_open_dialog: { name: "Cancel open dialog", automation_level: "semi_automatic", dialog_type: "open_file", cancel_expected: true },
   cancel_save_dialog: { name: "Cancel save dialog", automation_level: "semi_automatic", dialog_type: "save_file", cancel_expected: true },
@@ -106,7 +111,15 @@ function buildPlatformPayload(scenario) {
   };
 }
 
-function buildTargetPayload() {
+function buildTargetPayload(scenario) {
+  const incoming = scenario.target || {};
+  if (incoming.name && incoming.version && incoming.sample_app) {
+    return {
+      name: String(incoming.name),
+      version: String(incoming.version),
+      sample_app: String(incoming.sample_app),
+    };
+  }
   return {
     name: TARGET_NAME,
     version: process.versions.electron || "unknown",
@@ -140,7 +153,14 @@ function executeSimulation(simulation, dialogType) {
     ? (simulation.selected_paths || [])
     : (simulation.selected_path ? [simulation.selected_path] : []);
   const values = selectedValues.filter(Boolean).map((value) => String(value));
-  return { values, cancelled: values.length === 0, returned_resource_type: values.length ? "path" : "unknown", notes: [] };
+  const notes = [];
+  if (simulation.selected_filter_label) {
+    notes.push({
+      code: "SELECTED_FILTER_LABEL",
+      message: `Simulation recorded selected filter label '${String(simulation.selected_filter_label)}'.`,
+    });
+  }
+  return { values, cancelled: values.length === 0, returned_resource_type: values.length ? "path" : "unknown", notes };
 }
 
 function buildOpenDialogOptions(scenario, dialogType) {
@@ -299,6 +319,114 @@ function validateSelectionCount(scenario, casePayload, selection) {
   return issues;
 }
 
+function normalizeExtensions(values) {
+  if (!Array.isArray(values)) {
+    return [];
+  }
+  return values
+    .map((value) => String(value).trim().toLowerCase())
+    .filter(Boolean);
+}
+
+function evaluateFilterExpectations(scenario, dialogType, selection) {
+  const dialogPayload = scenario.dialog || {};
+  const expectation = scenario.expectation || {};
+  const notes = [];
+  const fileTypes = normalizeFileTypes(dialogPayload.filetypes);
+
+  if (fileTypes.length > 0) {
+    const configured = fileTypes
+      .map((item) => `${item.name} (${item.extensions.map((extension) => `*.${extension}`).join(";") || "*.*"})`)
+      .join(", ");
+    notes.push({
+      code: "CONFIGURED_FILTERS",
+      message: `Configured dialog filters: ${configured}.`,
+    });
+  }
+
+  if (expectation.selected_filter_label) {
+    notes.push({
+      code: "FILTER_INTENT",
+      message: `Scenario exercised filter intent '${String(expectation.selected_filter_label)}'.`,
+    });
+  }
+
+  if (dialogType !== "open_file" || selection.cancelled || !selection.values.length) {
+    return { notes, status: null };
+  }
+
+  const allowedExtensions = new Set(normalizeExtensions(expectation.allowed_extensions));
+  if (allowedExtensions.size === 0) {
+    return { notes, status: null };
+  }
+
+  const selectedExtension = path.extname(selection.values[0]).toLowerCase();
+  if (allowedExtensions.has(selectedExtension)) {
+    notes.push({
+      code: "FILTER_MATCHED_SELECTION",
+      message: `Selected file extension '${selectedExtension}' matched the allowed filter set ${JSON.stringify(Array.from(allowedExtensions).sort())}.`,
+    });
+    return { notes, status: null };
+  }
+
+  notes.push({
+    code: "FILTER_MISMATCH",
+    message: `Selected file extension '${selectedExtension || "(none)"}' did not match the allowed filter set ${JSON.stringify(Array.from(allowedExtensions).sort())}. Native dialogs may allow manual override or expose filters as advisory only.`,
+  });
+  return { notes, status: "warn" };
+}
+
+function evaluateSaveExpectations(scenario, dialogType, selection) {
+  const expectation = scenario.expectation || {};
+  const notes = [];
+  if (dialogType !== "save_file" || selection.cancelled || !selection.values.length) {
+    return { notes, status: null };
+  }
+
+  const selectedExtension = path.extname(selection.values[0]).toLowerCase();
+  const expectedExtension = String(expectation.expected_extension || "").toLowerCase();
+
+  if (expectation.expect_auto_append && expectedExtension) {
+    if (selectedExtension === expectedExtension) {
+      notes.push({
+        code: "AUTO_APPEND_OBSERVED",
+        message: `Returned save path used extension '${selectedExtension}', matching the configured default extension.`,
+      });
+      return { notes, status: null };
+    }
+    notes.push({
+      code: "AUTO_APPEND_NOT_OBSERVED",
+      message: `Returned save path used extension '${selectedExtension || "(none)"}' instead of the configured default extension '${expectedExtension}'. Some dialog backends treat default extensions as advisory only.`,
+    });
+    return { notes, status: "warn" };
+  }
+
+  const mismatchedExtension = String(expectation.mismatched_extension || "").toLowerCase();
+  if (mismatchedExtension && expectedExtension) {
+    if (selectedExtension === mismatchedExtension) {
+      notes.push({
+        code: "WRONG_EXTENSION_PRESERVED",
+        message: `Returned save path preserved the mismatched extension '${mismatchedExtension}' instead of coercing to '${expectedExtension}'.`,
+      });
+      return { notes, status: "warn" };
+    }
+    if (selectedExtension === expectedExtension) {
+      notes.push({
+        code: "WRONG_EXTENSION_CORRECTED",
+        message: `Returned save path used the configured extension '${expectedExtension}' rather than the mismatched extension '${mismatchedExtension}'.`,
+      });
+      return { notes, status: null };
+    }
+    notes.push({
+      code: "WRONG_EXTENSION_ALTERNATE_RESULT",
+      message: `Returned save path used extension '${selectedExtension || "(none)"}', which differs from both the configured '${expectedExtension}' and mismatched '${mismatchedExtension}' extensions.`,
+    });
+    return { notes, status: "warn" };
+  }
+
+  return { notes, status: null };
+}
+
 function classifyErrorCode(error) {
   const message = String(error.message || error).toLowerCase();
   if (message.includes("display") || message.includes("window")) {
@@ -344,10 +472,22 @@ function buildResultPayload(scenario, casePayload, dialogType, selection, durati
   const selectionCountIssues = validateSelectionCount(scenario, casePayload, selection);
   notes.push(...selectionCountIssues);
 
+  const filterEvaluation = evaluateFilterExpectations(scenario, dialogType, selection);
+  notes.push(...filterEvaluation.notes);
+  const saveEvaluation = evaluateSaveExpectations(scenario, dialogType, selection);
+  notes.push(...saveEvaluation.notes);
+
   if (!scenario.simulation?.enabled) {
     notes.push({
       code: "NATIVE_DIALOG_BEHAVIOR",
       message: "Electron native dialog behavior may vary by platform or desktop environment; compare notes before treating differences as regressions.",
+    });
+  }
+
+  if (!scenario.simulation?.enabled && (casePayload.id.startsWith("filter_") || ["extension_auto_append_on_save", "wrong_extension_selected"].includes(casePayload.id))) {
+    notes.push({
+      code: "NATIVE_DIALOG_LIMITATION",
+      message: "Electron does not expose deterministic APIs for reading the actively chosen native filter or proving whether the backend auto-appended an extension; results should be interpreted as best-effort observations from the returned path.",
     });
   }
 
@@ -358,7 +498,9 @@ function buildResultPayload(scenario, casePayload, dialogType, selection, durati
     });
   }
 
-  const status = cancelExpected || selectionCountIssues.length > 0 ? "fail" : "pass";
+  const status = cancelExpected || selectionCountIssues.length > 0
+    ? "fail"
+    : (filterEvaluation.status === "warn" || saveEvaluation.status === "warn" ? "warn" : "pass");
   const access = computeAccessFlags(dialogType, selection.values);
   return {
     status,
@@ -446,7 +588,7 @@ async function main() {
     schema_version: SCHEMA_VERSION,
     run_id: scenario.run_id || generateRunId(),
     platform: buildPlatformPayload(scenario),
-    target: buildTargetPayload(),
+    target: buildTargetPayload(scenario),
     case: casePayload,
     result: buildResultPayload(
       scenario,

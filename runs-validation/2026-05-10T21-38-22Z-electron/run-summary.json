@@ -1,0 +1,50 @@
+{
+  "schema_version": "0.1",
+  "run_id": "2026-05-10T21-38-22Z-electron",
+  "generated_at": "2026-05-10T21:38:25.639899+00:00",
+  "platform": {
+    "os": "linux",
+    "distribution": "Fedora Linux",
+    "version": "43",
+    "desktop_environment": "KDE",
+    "session_type": "wayland",
+    "sandbox": "none"
+  },
+  "target": {
+    "name": "electron",
+    "version": "^35.5.1",
+    "sample_app": "samples/electron"
+  },
+  "cases": [
+    {
+      "case_id": "filter_pdf_only",
+      "status": "pass",
+      "duration_ms": 70,
+      "result_path": "/home/tynusz/.cline/worktrees/4437d/FileGate/runs-validation/2026-05-10T21-38-22Z-electron/filter_pdf_only/result.json"
+    },
+    {
+      "case_id": "filter_images_only",
+      "status": "pass",
+      "duration_ms": 73,
+      "result_path": "/home/tynusz/.cline/worktrees/4437d/FileGate/runs-validation/2026-05-10T21-38-22Z-electron/filter_images_only/result.json"
+    },
+    {
+      "case_id": "filter_multiple_mime_types",
+      "status": "pass",
+      "duration_ms": 74,
+      "result_path": "/home/tynusz/.cline/worktrees/4437d/FileGate/runs-validation/2026-05-10T21-38-22Z-electron/filter_multiple_mime_types/result.json"
+    },
+    {
+      "case_id": "extension_auto_append_on_save",
+      "status": "pass",
+      "duration_ms": 82,
+      "result_path": "/home/tynusz/.cline/worktrees/4437d/FileGate/runs-validation/2026-05-10T21-38-22Z-electron/extension_auto_append_on_save/result.json"
+    },
+    {
+      "case_id": "wrong_extension_selected",
+      "status": "warn",
+      "duration_ms": 66,
+      "result_path": "/home/tynusz/.cline/worktrees/4437d/FileGate/runs-validation/2026-05-10T21-38-22Z-electron/wrong_extension_selected/result.json"
+    }
+  ]
+}
