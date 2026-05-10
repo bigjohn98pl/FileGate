@@ -1,0 +1,13 @@
+{
+  "name": "filegate-electron-sample",
+  "version": "0.1.0",
+  "description": "FileGate Electron sample target for baseline open/save/folder compatibility runs",
+  "main": "main.js",
+  "private": true,
+  "scripts": {
+    "start": "electron ."
+  },
+  "devDependencies": {
+    "electron": "^35.5.1"
+  }
+}
