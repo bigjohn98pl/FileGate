@@ -15,6 +15,7 @@ Today, FileGate can:
 - run cases against a target application using a documented scenario/result contract
 - generate JSON, Markdown, and HTML reports from a run directory
 - compare two completed runs side by side
+- exercise an initial Linux portal/sandbox coverage path with explicit capability notes
 
 The broader documentation in `docs/` describes a larger planned conformance surface. Not every case listed there is implemented in the CLI yet. The current runnable case set is the one returned by `filegate list-cases`.
 
@@ -24,6 +25,7 @@ The broader documentation in `docs/` describes a larger planned conformance surf
 - `pip` for installing the package locally
 - For the bundled GTK sample: PyGObject / `gi` with GTK 4 bindings
 - For the bundled Electron sample: Node.js and npm
+- For the bundled Linux portal sample: `gdbus` and an XDG Desktop Portal session bus service
 - For interactive desktop dialog testing: a graphical desktop session compatible with your target app
 
 Current Python dependency:
@@ -109,6 +111,11 @@ At the time of writing, `list-cases` reports these runnable cases:
 - `persistent_access_after_restart`
 - `revoked_access_behavior`
 - `timeout_when_dialog_not_closed`
+- `flatpak_open_file_portal`
+- `flatpak_save_file_portal`
+- `portal_cancel_behavior`
+- `portal_returns_uri_or_path`
+- `sandbox_no_home_access_without_grant`
 
 These are currently marked as `semi_automatic` cases. In practice:
 
@@ -116,12 +123,20 @@ These are currently marked as `semi_automatic` cases. In practice:
 - sample targets can execute those scenarios in simulation mode for deterministic validation
 - real GUI behavior still depends on the target application and desktop environment
 
-The new stability/persistence group mixes automation levels intentionally:
+The stability/persistence group mixes automation levels intentionally:
 
 - `open_dialog_multiple_times` and `open_after_app_restart` are `semi_automatic`
 - `persistent_access_after_restart` is `semi_automatic` and records persistence as an observation
 - `revoked_access_behavior` is intentionally `manual` until a fuller revocation harness exists
 - `timeout_when_dialog_not_closed` is `semi_automatic` and validates runner timeout semantics
+
+For the portal subset specifically:
+
+- portal cases use the `portal_selection` scenario builder registered in the runner
+- outputs capture explicit portal capability metadata and sandbox metadata via `execution_context`
+- URI vs path observations are recorded in notes and `returned_resource_type`
+- known environment limitations are surfaced as `unsupported`, `warn`, or `inconclusive` results instead of being hidden
+- runs degrade gracefully when XDG portal is unavailable (no gdbus, no D-Bus session)
 
 ## Typical usage flow
 
@@ -175,6 +190,7 @@ Example output:
 ```text
 python-gtk      Bundled Python GTK 4 sample target.
 python-tkinter  Bundled Python Tkinter sample target.
+linux-portal    Bundled Linux XDG Desktop Portal sample target.
 electron        Bundled Electron sample target.
 ```
 
@@ -192,6 +208,7 @@ Or prepare only one target:
 filegate prepare-target electron
 filegate prepare-target python-gtk
 filegate prepare-target python-tkinter
+filegate prepare-target linux-portal
 ```
 
 `run` supports two modes:
@@ -224,6 +241,20 @@ Run the bundled Electron sample:
 ```bash
 filegate run electron --mode interactive --output-dir runs
 ```
+
+Run the bundled Linux portal sample in deterministic simulation mode:
+
+```bash
+filegate run linux-portal \
+  --mode simulation \
+  --case-id flatpak_open_file_portal \
+  --case-id flatpak_save_file_portal \
+  --case-id portal_cancel_behavior \
+  --case-id portal_returns_uri_or_path \
+  --case-id sandbox_no_home_access_without_grant
+```
+
+Portal interactive mode is intentionally conservative in this revision: FileGate probes portal availability and reports explicit limitations when a live D-Bus Request/Response execution path is not yet implemented.
 
 If you omit `--case-id`, FileGate runs all currently implemented cases.
 

@@ -25,6 +25,8 @@ def prepare_target(target_id: str, repo_root: Path | None = None) -> Preparation
         return _prepare_python_gtk(root)
     if normalized == "python-tkinter":
         return _prepare_python_tkinter(root)
+    if normalized == "linux-portal":
+        return _prepare_linux_portal(root)
 
     raise KeyError(f"Unknown target preset '{target_id}'.")
 
@@ -33,6 +35,7 @@ def prepare_all_targets(repo_root: Path | None = None) -> list[PreparationResult
     return [
         prepare_target("python-gtk", repo_root=repo_root),
         prepare_target("python-tkinter", repo_root=repo_root),
+        prepare_target("linux-portal", repo_root=repo_root),
         prepare_target("electron", repo_root=repo_root),
     ]
 
@@ -104,3 +107,30 @@ def _prepare_electron(root: Path) -> PreparationResult:
     if version_check.stderr.strip():
         details.append(version_check.stderr.strip())
     return PreparationResult("electron", "failed", details)
+
+
+def _prepare_linux_portal(root: Path) -> PreparationResult:
+    details: list[str] = []
+    command = [
+        "python3",
+        "-c",
+        (
+            "import shutil, sys; "
+            "missing=[name for name in ('gdbus',) if shutil.which(name) is None]; "
+            "print('missing=' + ','.join(missing) if missing else 'portal-prereqs-ok'); "
+            "sys.exit(0 if not missing else 1)"
+        ),
+    ]
+    completed = subprocess.run(command, cwd=root, capture_output=True, text=True)
+    if completed.returncode == 0:
+        details.append("Portal probe prerequisites check passed (`gdbus` available).")
+        return PreparationResult("linux-portal", "ready", details)
+
+    details.append("Portal probe prerequisites check failed.")
+    stdout = completed.stdout.strip()
+    stderr = completed.stderr.strip()
+    if stdout:
+        details.append(stdout)
+    if stderr:
+        details.append(stderr)
+    return PreparationResult("linux-portal", "failed", details)
