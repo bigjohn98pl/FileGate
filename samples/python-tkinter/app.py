@@ -98,6 +98,31 @@ CASE_DEFAULTS: dict[str, dict[str, Any]] = {
         "dialog_type": "save_file",
         "cancel_expected": True,
     },
+    "open_dialog_multiple_times": {
+        "name": "Open dialog multiple times",
+        "automation_level": "semi_automatic",
+        "dialog_type": "open_file",
+    },
+    "open_after_app_restart": {
+        "name": "Open after app restart",
+        "automation_level": "semi_automatic",
+        "dialog_type": "open_file",
+    },
+    "persistent_access_after_restart": {
+        "name": "Persistent access after restart",
+        "automation_level": "semi_automatic",
+        "dialog_type": "open_file",
+    },
+    "revoked_access_behavior": {
+        "name": "Revoked access behavior",
+        "automation_level": "manual",
+        "dialog_type": "open_file",
+    },
+    "timeout_when_dialog_not_closed": {
+        "name": "Timeout when dialog not closed",
+        "automation_level": "semi_automatic",
+        "dialog_type": "open_file",
+    },
 }
 
 
@@ -241,6 +266,9 @@ def execute_selection(scenario: dict[str, Any], dialog_type: str) -> SelectionRe
     if simulation.get("enabled"):
         return execute_simulation(simulation, dialog_type)
 
+    if dialog_type == "probe_resource":
+        return execute_probe_selection(scenario)
+
     if tk is None or filedialog is None:
         raise RuntimeError("Tkinter is unavailable in this Python environment.")
 
@@ -288,8 +316,15 @@ def execute_selection(scenario: dict[str, Any], dialog_type: str) -> SelectionRe
 
 
 def execute_simulation(simulation: dict[str, Any], dialog_type: str) -> SelectionResult:
+    sleep_seconds = simulation.get("sleep_before_result_seconds")
+    if sleep_seconds is not None:
+        time.sleep(float(sleep_seconds))
+
     if simulation.get("cancel"):
         return SelectionResult(values=[], cancelled=True, returned_resource_type="unknown", notes=[])
+
+    if dialog_type == "probe_resource":
+        return execute_probe_simulation(simulation)
 
     if dialog_type == "open_files":
         selected_values = simulation.get("selected_paths") or []
@@ -314,6 +349,40 @@ def execute_simulation(simulation: dict[str, Any], dialog_type: str) -> Selectio
     )
 
 
+def execute_probe_selection(scenario: dict[str, Any]) -> SelectionResult:
+    simulation = scenario.get("simulation", {})
+    probe_path = simulation.get("probe_path") or scenario.get("expectation", {}).get("probe_path")
+    if probe_path:
+        values = [str(probe_path)]
+        return SelectionResult(
+            values=values,
+            cancelled=len(values) == 0,
+            returned_resource_type="path" if values else "unknown",
+        )
+    return SelectionResult(values=[], cancelled=True, returned_resource_type="unknown")
+
+
+def execute_probe_simulation(simulation: dict[str, Any]) -> SelectionResult:
+    probe_path = simulation.get("probe_path")
+    if not probe_path:
+        return SelectionResult(values=[], cancelled=True, returned_resource_type="unknown")
+
+    target_path = Path(str(probe_path))
+    target_path.parent.mkdir(parents=True, exist_ok=True)
+
+    if simulation.get("revoke_access"):
+        if target_path.exists():
+            target_path.unlink()
+        return SelectionResult(values=[str(target_path)], cancelled=False, returned_resource_type="path")
+
+    if simulation.get("persisted_access"):
+        if not target_path.exists():
+            target_path.write_text("FileGate persisted access fixture\n", encoding="utf-8")
+        return SelectionResult(values=[str(target_path)], cancelled=False, returned_resource_type="path")
+
+    return SelectionResult(values=[str(target_path)], cancelled=False, returned_resource_type="path")
+
+
 def compute_access_flags(dialog_type: str, values: list[str]) -> tuple[bool, bool]:
     if not values:
         return False, False
@@ -323,7 +392,7 @@ def compute_access_flags(dialog_type: str, values: list[str]) -> tuple[bool, boo
         return can_read, False
 
     value = values[0]
-    if dialog_type in {"open_file", "open_folder"}:
+    if dialog_type in {"open_file", "open_folder", "probe_resource"}:
         return os.access(value, os.R_OK), os.access(value, os.W_OK)
 
     if dialog_type == "save_file":
@@ -566,6 +635,45 @@ def build_result_payload(
         }
 
     can_read, can_write = compute_access_flags(dialog_type, selection.values)
+
+    if dialog_type == "probe_resource" and selection.values:
+        expectation = scenario.get("expectation", {})
+        if expectation.get("persistence_case"):
+            notes.append(
+                {
+                    "code": "PERSISTENCE_PROBE",
+                    "message": "This result records direct post-restart probing of the previously selected resource.",
+                }
+            )
+            if not can_read and not can_write:
+                return {
+                    "status": "warn",
+                    "duration_ms": duration_ms,
+                    "returned_resource_type": selection.returned_resource_type,
+                    "returned_value_example": selection.values[0],
+                    "can_read": can_read,
+                    "can_write": can_write,
+                    "error_code": "PERSISTENCE_DENIED",
+                    "notes": notes,
+                }
+        if expectation.get("revocation_case"):
+            notes.append(
+                {
+                    "code": "REVOCATION_PROBE",
+                    "message": "This result records direct probing after access revocation or resource removal.",
+                }
+            )
+            if not can_read and not can_write:
+                return {
+                    "status": "manual_required",
+                    "duration_ms": duration_ms,
+                    "returned_resource_type": selection.returned_resource_type,
+                    "returned_value_example": selection.values[0],
+                    "can_read": can_read,
+                    "can_write": can_write,
+                    "error_code": "ACCESS_REVOKED",
+                    "notes": notes,
+                }
 
     if selection.cancelled:
         notes.append(

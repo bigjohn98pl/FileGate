@@ -16,6 +16,11 @@ It supports:
 - `save_file_overwrite`
 - `cancel_open_dialog`
 - `cancel_save_dialog`
+- `open_dialog_multiple_times`
+- `open_after_app_restart`
+- `persistent_access_after_restart`
+- `revoked_access_behavior`
+- `timeout_when_dialog_not_closed`
 
 The app emits result JSON compatible with the required fields in [`docs/result-schema.md`](../../docs/result-schema.md).
 
@@ -133,12 +138,17 @@ Known case IDs map automatically to default dialog types:
 - `save_file_overwrite` → `save_file`
 - `cancel_open_dialog` → `open_file`
 - `cancel_save_dialog` → `save_file`
+- `open_dialog_multiple_times` → `open_file`
+- `open_after_app_restart` → `open_file`
+- `persistent_access_after_restart` → `open_file`
+- `revoked_access_behavior` → `open_file`
+- `timeout_when_dialog_not_closed` → `open_file`
 
 ### `dialog`
 
 Supported fields:
 
-- `type` — one of `open_file`, `open_files`, `open_folder`, `save_file`
+- `type` — one of `open_file`, `open_files`, `open_folder`, `save_file`, `probe_resource`
 - `title`
 - `initialdir`
 - `initialfile`
@@ -169,6 +179,21 @@ Fields:
 - `cancel` — boolean
 - `selected_path` — single selected path for `open_file`, `open_folder`, or `save_file`
 - `selected_paths` — array of paths for `open_files`
+- `probe_path` — path used for direct probe-style steps
+- `persisted_access` — when true, simulation ensures the probe resource remains accessible
+- `revoke_access` — when true, simulation removes the probe resource before access checks
+- `sleep_before_result_seconds` — optional delay used for timeout validation
+
+### `orchestration`
+
+When FileGate runs restart-aware or repeated-dialog cases, it also passes:
+
+- `mode`
+- `step_id`
+- `step_index`
+- `total_steps`
+
+This sample target does not need to persist hidden session state between invocations; it can derive behavior from the scenario alone.
 
 Example:
 
@@ -209,6 +234,7 @@ Result mapping notes:
 - When native dialog APIs do not expose deterministic filter/extension state, the sample reports best-effort observations and records that limitation in result notes.
 - Headless or unavailable Tk backends return `result.status = "unsupported"` or `fail` with an explanatory error code.
 - `returned_resource_type` is `path` when a path is returned and `unknown` when nothing is selected.
+- Persistence/revocation probe steps may return `warn` + `PERSISTENCE_DENIED` or `manual_required` + `ACCESS_REVOKED` to keep observations explicit.
 
 ## Validation examples
 

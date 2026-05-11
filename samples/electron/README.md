@@ -15,6 +15,11 @@ It supports:
 - `wrong_extension_selected`
 - `cancel_open_dialog`
 - `cancel_save_dialog`
+- `open_dialog_multiple_times`
+- `open_after_app_restart`
+- `persistent_access_after_restart`
+- `revoked_access_behavior`
+- `timeout_when_dialog_not_closed`
 
 The app emits result JSON compatible with the required fields in [`docs/result-schema.md`](../../docs/result-schema.md).
 
@@ -58,6 +63,7 @@ The scenario format mirrors the Python Tkinter sample target:
 - top-level `case`, optional `dialog`, optional `expectation`, optional `simulation`
 - `simulation.enabled=true` allows deterministic non-interactive runs
 - known case IDs infer dialog types automatically
+- the runner may invoke the target multiple times for a single FileGate case and provides step metadata in `orchestration`
 
 Supported dialog types:
 
@@ -65,6 +71,7 @@ Supported dialog types:
 - `open_files`
 - `open_folder`
 - `save_file`
+- `probe_resource`
 
 Supported dialog fields:
 
@@ -74,6 +81,20 @@ Supported dialog fields:
 - `defaultextension`
 - `filetypes`
 - `mustexist`
+
+Additional simulation fields used by the stability/persistence cases:
+
+- `probe_path`
+- `persisted_access`
+- `revoke_access`
+- `sleep_before_result_seconds`
+
+Additional orchestration metadata passed by the runner:
+
+- `orchestration.mode`
+- `orchestration.step_id`
+- `orchestration.step_index`
+- `orchestration.total_steps`
 
 ## Result behavior
 
@@ -85,6 +106,7 @@ Supported dialog fields:
 - Save-extension cases add structured notes describing whether the configured extension was auto-appended, preserved, or overridden.
 - Interactive native dialog results may include notes documenting platform/backend differences.
 - `returned_resource_type` is currently `path` for baseline Electron cases.
+- Persistence probe steps may return `warn` + `PERSISTENCE_DENIED` and revocation probe steps may return `manual_required` + `ACCESS_REVOKED`.
 
 ## Known differences
 

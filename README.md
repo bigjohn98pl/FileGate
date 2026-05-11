@@ -104,12 +104,24 @@ At the time of writing, `list-cases` reports these runnable cases:
 - `wrong_extension_selected`
 - `cancel_open_dialog`
 - `cancel_save_dialog`
+- `open_dialog_multiple_times`
+- `open_after_app_restart`
+- `persistent_access_after_restart`
+- `revoked_access_behavior`
+- `timeout_when_dialog_not_closed`
 
 These are currently marked as `semi_automatic` cases. In practice:
 
 - the runner prepares a scenario for the target
 - sample targets can execute those scenarios in simulation mode for deterministic validation
 - real GUI behavior still depends on the target application and desktop environment
+
+The new stability/persistence group mixes automation levels intentionally:
+
+- `open_dialog_multiple_times` and `open_after_app_restart` are `semi_automatic`
+- `persistent_access_after_restart` is `semi_automatic` and records persistence as an observation
+- `revoked_access_behavior` is intentionally `manual` until a fuller revocation harness exists
+- `timeout_when_dialog_not_closed` is `semi_automatic` and validates runner timeout semantics
 
 ## Typical usage flow
 
@@ -232,6 +244,36 @@ The generic `run` command launches a target command and passes it:
 - `--output <path-to-result.json>`
 
 That means your target must implement FileGate's scenario/result contract.
+
+### Multi-step and restart-aware target contract
+
+For stability/persistence cases, FileGate may launch the same target more than once for a single case.
+
+Targets should therefore treat each invocation as self-contained and rely on scenario metadata instead of hidden in-process state.
+
+Additional scenario conventions now used by the bundled runner:
+
+- top-level `orchestration` object
+  - `mode` — one of the runner orchestration modes for the active case
+  - `step_id` — logical step identifier within the case
+  - `step_index` — 1-based step number
+  - `total_steps` — total number of planned steps
+- `dialog.type = "probe_resource"` for post-restart or post-revocation access probing
+- `simulation.probe_path` for direct resource probing in simulation mode
+- `simulation.persisted_access` to indicate the probe should still succeed in simulation
+- `simulation.revoke_access` to indicate the probe should simulate revocation/resource loss
+- `simulation.sleep_before_result_seconds` to support deterministic timeout validation
+
+Runner artifact conventions for these cases:
+
+- aggregate result remains `<case-id>/result.json`
+- per-step artifacts are written as:
+  - `scenario.step-<n>.json`
+  - `result.step-<n>.json`
+  - `stdout.step-<n>.log`
+  - `stderr.step-<n>.log`
+
+This keeps top-level result schema compatibility while exposing restart/persistence evidence explicitly.
 
 General form:
 

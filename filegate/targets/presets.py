@@ -4,6 +4,11 @@ from __future__ import annotations
 
 from pathlib import Path
 
+try:
+    import tkinter as tk
+except ImportError:  # pragma: no cover - environment-specific fallback
+    tk = None
+
 from filegate.runner import TargetConfig
 from filegate.targets.electron import build_electron_target
 from filegate.targets.python_gtk import build_python_gtk_target
@@ -14,11 +19,12 @@ def build_python_tkinter_target(repo_root: Path | None = None) -> TargetConfig:
     root = (repo_root or Path(__file__).resolve().parents[2]).resolve()
     sample_dir = root / "samples" / "python-tkinter"
     app_path = sample_dir / "app.py"
+    version = str(getattr(tk, "TkVersion", "unknown")) if tk is not None else "unknown"
     return TargetConfig(
         name="python-tkinter",
         command=["python3", str(app_path)],
         sample_app="samples/python-tkinter",
-        version="unknown",
+        version=version,
         working_directory=root,
     )
 
