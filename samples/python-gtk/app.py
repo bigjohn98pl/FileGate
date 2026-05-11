@@ -77,6 +77,32 @@ CASE_DEFAULTS: dict[str, dict[str, Any]] = {
         "dialog_type": "save_file",
         "cancel_expected": True,
     },
+    # ── Permissions ──────────────────────────────────────────────────────────
+    "read_only_file": {
+        "name": "Read only file",
+        "automation_level": "automatic",
+        "dialog_type": "open_file",
+    },
+    "write_to_read_only_file": {
+        "name": "Write to read only file",
+        "automation_level": "automatic",
+        "dialog_type": "save_file",
+    },
+    "permission_denied_file": {
+        "name": "Permission denied file",
+        "automation_level": "automatic",
+        "dialog_type": "open_file",
+    },
+    "permission_denied_directory": {
+        "name": "Permission denied directory",
+        "automation_level": "automatic",
+        "dialog_type": "open_folder",
+    },
+    "execute_permission_irrelevant": {
+        "name": "Execute permission irrelevant",
+        "automation_level": "automatic",
+        "dialog_type": "open_file",
+    },
 }
 
 
@@ -595,6 +621,10 @@ def build_result_payload(
 
     selection_count_issues = validate_selection_count(scenario, case_payload, selection)
     notes.extend(selection_count_issues)
+    perm_notes, perm_status, perm_error_code = evaluate_permission_expectations(
+        scenario, case_payload, dialog_type, selection, can_read, can_write
+    )
+    notes.extend(perm_notes)
 
     if cancel_expected:
         notes.append(
@@ -606,6 +636,8 @@ def build_result_payload(
         status = "fail"
     elif selection_count_issues:
         status = "fail"
+    elif perm_status == "warn":
+        status = "warn"
     else:
         status = "pass"
 
@@ -616,9 +648,77 @@ def build_result_payload(
         "returned_value_example": selection.values if dialog_type == "open_files" else selection.values[0],
         "can_read": can_read,
         "can_write": can_write,
-        "error_code": None,
+        "error_code": perm_error_code,
         "notes": notes,
     }
+
+
+def evaluate_permission_expectations(
+    scenario: dict[str, Any],
+    case_payload: dict[str, Any],
+    dialog_type: str,
+    selection: SelectionResult,
+    can_read: bool,
+    can_write: bool,
+) -> tuple[list[dict[str, str]], str | None, str | None]:
+    """Evaluate permissions-family contract and emit structured notes."""
+    extensions = scenario.get("extensions", {})
+    perm_ext = extensions.get("permissions", {})
+    notes: list[dict[str, str]] = []
+    if not perm_ext.get("permission_case"):
+        return notes, None, None
+    if selection.cancelled or not selection.values:
+        return notes, None, None
+    selected_value = selection.values[0]
+    perm_semantics = perm_ext.get("permission_case_semantics", "")
+    fixture_perms = perm_ext.get("fixture_permissions_octal", "")
+    notes.append({
+        "code": "PERMISSION_FIXTURE_OBSERVED",
+        "message": (
+            f"Permission case '{case_payload['id']}' executed with fixture permissions "
+            f"{fixture_perms}; observed can_read={can_read}, can_write={can_write} "
+            f"for '{selected_value}'."
+        ),
+    })
+    override_status: str | None = None
+    override_error_code: str | None = None
+    if perm_semantics == "read_only_accessible":
+        if can_read and not can_write:
+            notes.append({"code": "PERMISSION_READ_ONLY_CONFIRMED",
+                          "message": "Read-only access correctly observed: can_read=True, can_write=False."})
+        else:
+            notes.append({"code": "PERMISSION_READ_ONLY_UNEXPECTED_WRITE" if can_write else "PERMISSION_READ_ONLY_NO_READ",
+                          "message": "Unexpected permission observation on read-only fixture; check fixture setup."})
+            override_status = "warn"
+    elif perm_semantics == "write_denied_read_only":
+        if not can_write:
+            notes.append({"code": "PERMISSION_WRITE_DENIED_CONFIRMED",
+                          "message": "Write access correctly denied on read-only file: can_write=False. Encoding error_code=PERMISSION_DENIED."})
+            override_status = "warn"
+            override_error_code = "PERMISSION_DENIED"
+        else:
+            notes.append({"code": "PERMISSION_WRITE_ALLOWED_UNEXPECTED",
+                          "message": "Unexpected write access on a read-only fixture; check fixture setup or privileges."})
+            override_status = "warn"
+    elif perm_semantics == "access_denied":
+        if not can_read and not can_write:
+            notes.append({"code": "PERMISSION_ACCESS_DENIED_CONFIRMED",
+                          "message": "Access correctly denied: can_read=False, can_write=False. Encoding error_code=PERMISSION_DENIED."})
+            override_status = "warn"
+            override_error_code = "PERMISSION_DENIED"
+        else:
+            notes.append({"code": "PERMISSION_ACCESS_UNEXPECTEDLY_ALLOWED",
+                          "message": f"Unexpected access on fully-denied fixture: can_read={can_read}, can_write={can_write}."})
+            override_status = "warn"
+    elif perm_semantics == "execute_only_no_read":
+        if not can_read:
+            notes.append({"code": "PERMISSION_EXECUTE_ONLY_CONFIRMED",
+                          "message": "Execute-only permission correctly denies read access: can_read=False."})
+        else:
+            notes.append({"code": "PERMISSION_EXECUTE_ONLY_UNEXPECTED_READ",
+                          "message": "Unexpected read access on execute-only fixture; check fixture setup or privileges."})
+            override_status = "warn"
+    return notes, override_status, override_error_code
 
 
 def is_backend_error(error: Exception) -> bool:

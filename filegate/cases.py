@@ -1317,6 +1317,266 @@ MVP_CASES: tuple[CaseDefinition, ...] = (
             },
         ),
     ),
+    # ── Permissions ───────────────────────────────────────────────────────────
+    CaseDefinition(
+        case_id="read_only_file",
+        name="Read only file",
+        automation_level="automatic",
+        objective=(
+            "Verify that a read-only file (permissions 0o444) can be selected via an "
+            "open dialog and that the target explicitly reports can_read=True and "
+            "can_write=False without collapsing the result into a generic unknown outcome."
+        ),
+        preconditions=(
+            "Target executable is available.",
+            "Filesystem supports POSIX permission bits.",
+        ),
+        steps=(
+            "Materialize a file with read-only permissions (0o444).",
+            "Run the open-file scenario selecting the read-only file.",
+            "Verify can_read=True and can_write=False are reported explicitly.",
+        ),
+        expected_result=(
+            "can_read=True, can_write=False, error_code=null, status=pass; "
+            "notes confirm the read-only permission observation."
+        ),
+        artifacts=DEFAULT_ARTIFACTS,
+        dialog=DialogSpec(dialog_type="open_file"),
+        expectation=ExpectationSpec(expected_selection_count=1),
+        simulation=SimulationSpec(
+            fixtures=(
+                SimulationFixtureSpec(
+                    fixture_id="read_only_file",
+                    relative_path="permissions/read-only-file.txt",
+                    role="selection",
+                    materialize=True,
+                    content="FileGate read-only permissions fixture\n",
+                    permissions=0o444,
+                ),
+            ),
+        ),
+        family="permissions",
+        tags=("permissions", "open", "read_only"),
+        extensions=_extension_contract(
+            path={"expected_resource_kind": "file", "selection_mode": "single"},
+            permissions={
+                "permission_case": True,
+                "fixture_permissions_octal": "0o444",
+                "permission_case_semantics": "read_only_accessible",
+                "expected_can_read": True,
+                "expected_can_write": False,
+                "expected_error_code": None,
+            },
+        ),
+    ),
+    CaseDefinition(
+        case_id="write_to_read_only_file",
+        name="Write to read only file",
+        automation_level="automatic",
+        objective=(
+            "Verify that attempting to write to a read-only file (0o444) via a save "
+            "dialog produces can_write=False and error_code=PERMISSION_DENIED explicitly, "
+            "without collapsing the denial into a generic unknown outcome."
+        ),
+        preconditions=(
+            "Target executable is available.",
+            "Filesystem supports POSIX permission bits.",
+        ),
+        steps=(
+            "Materialize a pre-existing file with read-only permissions (0o444).",
+            "Run the save-file scenario pointing at the read-only file.",
+            "Verify can_write=False and error_code=PERMISSION_DENIED are reported.",
+        ),
+        expected_result=(
+            "can_read=True, can_write=False, error_code=PERMISSION_DENIED, status=warn; "
+            "notes document that write access was denied due to read-only permissions."
+        ),
+        artifacts=DEFAULT_ARTIFACTS,
+        dialog=DialogSpec(dialog_type="save_file"),
+        simulation=SimulationSpec(
+            fixtures=(
+                SimulationFixtureSpec(
+                    fixture_id="read_only_save_target",
+                    relative_path="permissions/read-only-save-target.txt",
+                    role="selection",
+                    materialize=True,
+                    content="FileGate read-only save target fixture\n",
+                    permissions=0o444,
+                ),
+            ),
+        ),
+        family="permissions",
+        tags=("permissions", "save", "read_only", "write_denied"),
+        extensions=_extension_contract(
+            path={"expected_resource_kind": "file", "selection_mode": "single"},
+            permissions={
+                "permission_case": True,
+                "fixture_permissions_octal": "0o444",
+                "permission_case_semantics": "write_denied_read_only",
+                "requires_write_access": True,
+                "expected_can_read": True,
+                "expected_can_write": False,
+                "expected_error_code": "PERMISSION_DENIED",
+            },
+        ),
+    ),
+    CaseDefinition(
+        case_id="permission_denied_file",
+        name="Permission denied file",
+        automation_level="automatic",
+        objective=(
+            "Verify that a file with no access permissions (0o000) is handled so that "
+            "can_read=False, can_write=False, and error_code=PERMISSION_DENIED are set "
+            "explicitly rather than falling through to a generic unknown outcome."
+        ),
+        preconditions=(
+            "Target executable is available.",
+            "Filesystem supports POSIX permission bits.",
+            "Test process is not running as root (root bypasses permission checks).",
+        ),
+        steps=(
+            "Materialize a file with no permissions (0o000).",
+            "Run the open-file scenario selecting the inaccessible file.",
+            "Verify can_read=False, can_write=False, and error_code=PERMISSION_DENIED.",
+        ),
+        expected_result=(
+            "can_read=False, can_write=False, error_code=PERMISSION_DENIED, status=warn; "
+            "notes document that access was denied due to restrictive permissions."
+        ),
+        artifacts=DEFAULT_ARTIFACTS,
+        dialog=DialogSpec(dialog_type="open_file"),
+        expectation=ExpectationSpec(expected_selection_count=1),
+        simulation=SimulationSpec(
+            fixtures=(
+                SimulationFixtureSpec(
+                    fixture_id="denied_file",
+                    relative_path="permissions/denied-file.txt",
+                    role="selection",
+                    materialize=True,
+                    content="FileGate permission-denied fixture\n",
+                    permissions=0o000,
+                ),
+            ),
+        ),
+        family="permissions",
+        tags=("permissions", "open", "access_denied"),
+        extensions=_extension_contract(
+            path={"expected_resource_kind": "file", "selection_mode": "single"},
+            permissions={
+                "permission_case": True,
+                "fixture_permissions_octal": "0o000",
+                "permission_case_semantics": "access_denied",
+                "expected_can_read": False,
+                "expected_can_write": False,
+                "expected_error_code": "PERMISSION_DENIED",
+            },
+        ),
+    ),
+    CaseDefinition(
+        case_id="permission_denied_directory",
+        name="Permission denied directory",
+        automation_level="automatic",
+        objective=(
+            "Verify that a directory with no access permissions (0o000) is handled so "
+            "that can_read=False and error_code=PERMISSION_DENIED are set explicitly "
+            "rather than falling through to a generic unknown outcome."
+        ),
+        preconditions=(
+            "Target executable is available.",
+            "Filesystem supports POSIX permission bits.",
+            "Test process is not running as root (root bypasses permission checks).",
+        ),
+        steps=(
+            "Materialize a directory with no permissions (0o000).",
+            "Run the open-folder scenario selecting the inaccessible directory.",
+            "Verify can_read=False and error_code=PERMISSION_DENIED.",
+        ),
+        expected_result=(
+            "can_read=False, can_write=False, error_code=PERMISSION_DENIED, status=warn; "
+            "notes document that directory access was denied due to restrictive permissions."
+        ),
+        artifacts=DEFAULT_ARTIFACTS,
+        dialog=DialogSpec(dialog_type="open_folder"),
+        simulation=SimulationSpec(
+            fixtures=(
+                SimulationFixtureSpec(
+                    fixture_id="denied_directory",
+                    relative_path="permissions/denied-directory",
+                    kind="directory",
+                    role="selection",
+                    materialize=True,
+                    permissions=0o000,
+                ),
+            ),
+        ),
+        family="permissions",
+        tags=("permissions", "open", "directory", "access_denied"),
+        extensions=_extension_contract(
+            path={"expected_resource_kind": "directory", "selection_mode": "single"},
+            permissions={
+                "permission_case": True,
+                "fixture_permissions_octal": "0o000",
+                "permission_case_semantics": "access_denied",
+                "expected_can_read": False,
+                "expected_can_write": False,
+                "expected_error_code": "PERMISSION_DENIED",
+            },
+        ),
+    ),
+
+    CaseDefinition(
+        case_id="execute_permission_irrelevant",
+        name="Execute permission irrelevant",
+        automation_level="automatic",
+        objective=(
+            "Verify that a file with execute-only permissions (0o111) is handled so "
+            "that can_read=False is reported explicitly, confirming that the execute bit "
+            "does not grant read access to regular files."
+        ),
+        preconditions=(
+            "Target executable is available.",
+            "Filesystem supports POSIX permission bits.",
+            "Test process is not running as root (root bypasses permission checks).",
+        ),
+        steps=(
+            "Materialize a file with execute-only permissions (0o111).",
+            "Run the open-file scenario selecting the execute-only file.",
+            "Verify can_read=False is explicitly reported.",
+        ),
+        expected_result=(
+            "can_read=False, can_write=False, error_code=null, status=pass; "
+            "notes confirm that execute-only permission correctly denies read access."
+        ),
+        artifacts=DEFAULT_ARTIFACTS,
+        dialog=DialogSpec(dialog_type="open_file"),
+        expectation=ExpectationSpec(expected_selection_count=1),
+        simulation=SimulationSpec(
+            fixtures=(
+                SimulationFixtureSpec(
+                    fixture_id="execute_only_file",
+                    relative_path="permissions/execute-only-file.txt",
+                    role="selection",
+                    materialize=True,
+                    content="FileGate execute-only permissions fixture\n",
+                    permissions=0o111,
+                ),
+            ),
+        ),
+        family="permissions",
+        tags=("permissions", "open", "execute_only"),
+        extensions=_extension_contract(
+            path={"expected_resource_kind": "file", "selection_mode": "single"},
+            permissions={
+                "permission_case": True,
+                "fixture_permissions_octal": "0o111",
+                "permission_case_semantics": "execute_only_no_read",
+                "expected_can_read": False,
+                "expected_can_write": False,
+                "expected_error_code": None,
+            },
+        ),
+    ),
+
 )
 
 
