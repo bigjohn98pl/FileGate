@@ -950,6 +950,373 @@ MVP_CASES: tuple[CaseDefinition, ...] = (
             portal={"portal_expected": False, "sandbox_expected": True},
         ),
     ),
+    # ── Dialog basics – save overwrite ────────────────────────────────────────
+    CaseDefinition(
+        case_id="save_file_overwrite",
+        name="Save file overwrite",
+        automation_level="semi_automatic",
+        objective=(
+            "Verify that a save dialog can be directed at an already-existing file "
+            "and that the target reports the resulting write-access flags and any "
+            "overwrite-confirmation semantics."
+        ),
+        preconditions=("Target executable is available.",),
+        steps=(
+            "Materialize a pre-existing file at the save destination.",
+            "Run the save dialog scenario pointing to the pre-existing file.",
+            "Collect the returned path and access flags.",
+        ),
+        expected_result=(
+            "The returned path refers to the pre-existing file and write access is "
+            "confirmed; notes document overwrite-confirmation behavior observed."
+        ),
+        artifacts=DEFAULT_ARTIFACTS,
+        dialog=DialogSpec(dialog_type="save_file"),
+        simulation=SimulationSpec(
+            fixtures=(
+                SimulationFixtureSpec(
+                    fixture_id="overwrite_target",
+                    relative_path="overwrite-target.txt",
+                    role="selection",
+                    materialize=True,
+                    content="Original content before overwrite\n",
+                ),
+            ),
+        ),
+        family="dialog_basics",
+        tags=("dialog_basics", "save", "overwrite"),
+        extensions=_extension_contract(
+            path={
+                "expected_resource_kind": "file",
+                "selection_mode": "single",
+                "precondition": "file_exists",
+            },
+            permissions={"requires_write_access": True},
+            persistence={"expectation": "not_evaluated"},
+        ),
+    ),
+    # ── Path and naming ───────────────────────────────────────────────────────
+    CaseDefinition(
+        case_id="path_with_spaces",
+        name="Path with spaces",
+        automation_level="semi_automatic",
+        objective=(
+            "Verify that a target correctly handles and returns a path that contains "
+            "space characters in the directory or filename component."
+        ),
+        preconditions=("Target executable is available.",),
+        steps=(
+            "Materialize a file inside a directory whose name contains spaces.",
+            "Run the open-file scenario against the spaced path.",
+            "Verify the returned path is complete and untruncated.",
+        ),
+        expected_result=(
+            "The returned path preserves the embedded spaces without truncation, "
+            "encoding, or quoting artefacts."
+        ),
+        artifacts=DEFAULT_ARTIFACTS,
+        dialog=DialogSpec(dialog_type="open_file"),
+        expectation=ExpectationSpec(
+            expected_selection_count=1,
+            options={"expect_spaces_preserved": True},
+        ),
+        simulation=SimulationSpec(
+            fixtures=(
+                SimulationFixtureSpec(
+                    fixture_id="spaced_path_file",
+                    relative_path="path with spaces/file with spaces.txt",
+                    role="selection",
+                    content="FileGate path-with-spaces fixture\n",
+                ),
+            ),
+        ),
+        family="path_naming",
+        tags=("path_naming", "open", "spaces"),
+        extensions=_extension_contract(
+            path={
+                "expected_resource_kind": "file",
+                "selection_mode": "single",
+                "path_variant": "spaces_in_path",
+            },
+        ),
+    ),
+    CaseDefinition(
+        case_id="unicode_filename",
+        name="Unicode filename",
+        automation_level="semi_automatic",
+        objective=(
+            "Verify that a target correctly handles and returns a filename that "
+            "contains non-ASCII Unicode characters outside the Latin-1 range."
+        ),
+        preconditions=(
+            "Target executable is available.",
+            "Filesystem supports Unicode filenames.",
+        ),
+        steps=(
+            "Materialize a file with a Unicode filename.",
+            "Run the open-file scenario against the Unicode filename.",
+            "Verify the returned path preserves the Unicode characters.",
+        ),
+        expected_result=(
+            "The returned path preserves all Unicode characters without corruption, "
+            "replacement, or lossy encoding."
+        ),
+        artifacts=DEFAULT_ARTIFACTS,
+        dialog=DialogSpec(dialog_type="open_file"),
+        expectation=ExpectationSpec(expected_selection_count=1),
+        simulation=SimulationSpec(
+            fixtures=(
+                SimulationFixtureSpec(
+                    fixture_id="unicode_file",
+                    relative_path="zażółć-gęślą-jaźń.txt",
+                    role="selection",
+                    content="FileGate unicode filename fixture\n",
+                ),
+            ),
+        ),
+        family="path_naming",
+        tags=("path_naming", "open", "unicode", "encoding"),
+        extensions=_extension_contract(
+            path={
+                "expected_resource_kind": "file",
+                "selection_mode": "single",
+                "path_variant": "unicode_filename",
+                "encoding_risk": "unicode_normalization",
+            },
+        ),
+    ),
+    CaseDefinition(
+        case_id="polish_characters_filename",
+        name="Polish characters filename",
+        automation_level="semi_automatic",
+        objective=(
+            "Verify that a target correctly handles filenames containing Polish "
+            "diacritic characters (ą ć ę ł ń ó ś ź ż and their uppercase variants)."
+        ),
+        preconditions=(
+            "Target executable is available.",
+            "Filesystem supports UTF-8 filenames.",
+        ),
+        steps=(
+            "Materialize a file with Polish diacritics in the filename.",
+            "Run the open-file scenario against the file.",
+            "Verify the returned path preserves the diacritics.",
+        ),
+        expected_result=(
+            "The returned path preserves all Polish diacritics without substitution "
+            "or mojibake; notes document any observed locale-dependent behaviour."
+        ),
+        artifacts=DEFAULT_ARTIFACTS,
+        dialog=DialogSpec(dialog_type="open_file"),
+        expectation=ExpectationSpec(expected_selection_count=1),
+        simulation=SimulationSpec(
+            fixtures=(
+                SimulationFixtureSpec(
+                    fixture_id="polish_file",
+                    relative_path="plik-z-polskimi-znakami-ąćęłńóśźż.txt",
+                    role="selection",
+                    content="FileGate polish-characters fixture\n",
+                ),
+            ),
+        ),
+        family="path_naming",
+        tags=("path_naming", "open", "polish", "unicode", "diacritics"),
+        extensions=_extension_contract(
+            path={
+                "expected_resource_kind": "file",
+                "selection_mode": "single",
+                "path_variant": "polish_diacritics",
+                "encoding_risk": "locale_interaction",
+            },
+        ),
+    ),
+    CaseDefinition(
+        case_id="very_long_filename",
+        name="Very long filename",
+        automation_level="semi_automatic",
+        objective=(
+            "Verify that a target can handle filenames at or near the filesystem "
+            "maximum length (255 bytes on most POSIX systems) without truncation."
+        ),
+        preconditions=(
+            "Target executable is available.",
+            "Filesystem supports long filenames.",
+        ),
+        steps=(
+            "Materialize a file whose filename is 200+ characters long.",
+            "Run the open-file scenario against the long-named file.",
+            "Verify the returned path preserves the full filename length.",
+        ),
+        expected_result=(
+            "The returned path contains the full untruncated filename; notes document "
+            "any observed truncation or length-limit behaviour."
+        ),
+        artifacts=DEFAULT_ARTIFACTS,
+        dialog=DialogSpec(dialog_type="open_file"),
+        expectation=ExpectationSpec(
+            expected_selection_count=1,
+            options={"min_filename_length": 200},
+        ),
+        simulation=SimulationSpec(
+            fixtures=(
+                SimulationFixtureSpec(
+                    fixture_id="long_filename_file",
+                    relative_path=("a" * 200 + ".txt"),
+                    role="selection",
+                    content="FileGate very-long-filename fixture\n",
+                ),
+            ),
+        ),
+        family="path_naming",
+        tags=("path_naming", "open", "long_filename"),
+        extensions=_extension_contract(
+            path={
+                "expected_resource_kind": "file",
+                "selection_mode": "single",
+                "path_variant": "very_long_filename",
+                "filename_length": 204,
+            },
+        ),
+    ),
+    CaseDefinition(
+        case_id="nested_directory_path",
+        name="Nested directory path",
+        automation_level="semi_automatic",
+        objective=(
+            "Verify that a target correctly returns a path that is several directory "
+            "levels deep relative to the filesystem root."
+        ),
+        preconditions=("Target executable is available.",),
+        steps=(
+            "Materialize a file inside a deeply nested directory tree.",
+            "Run the open-file scenario against the nested file.",
+            "Verify the returned path contains all intermediate directories.",
+        ),
+        expected_result=(
+            "The returned path preserves all directory levels without truncation or "
+            "flattening; notes document any depth-related limitations."
+        ),
+        artifacts=DEFAULT_ARTIFACTS,
+        dialog=DialogSpec(dialog_type="open_file"),
+        expectation=ExpectationSpec(expected_selection_count=1),
+        simulation=SimulationSpec(
+            fixtures=(
+                SimulationFixtureSpec(
+                    fixture_id="nested_file",
+                    relative_path="level1/level2/level3/level4/nested-file.txt",
+                    role="selection",
+                    content="FileGate nested-directory fixture\n",
+                ),
+            ),
+        ),
+        family="path_naming",
+        tags=("path_naming", "open", "nested_directory"),
+        extensions=_extension_contract(
+            path={
+                "expected_resource_kind": "file",
+                "selection_mode": "single",
+                "path_variant": "nested_directory",
+                "nesting_depth": 4,
+            },
+        ),
+    ),
+    CaseDefinition(
+        case_id="relative_vs_absolute_path",
+        name="Relative vs absolute path",
+        automation_level="semi_automatic",
+        objective=(
+            "Verify that a target always returns an absolute path regardless of "
+            "whether the scenario fixture is resolved from a relative working directory."
+        ),
+        preconditions=("Target executable is available.",),
+        steps=(
+            "Materialize a fixture with a path relative to the simulation root.",
+            "Run the open-file scenario and collect the returned path.",
+            "Check whether the returned path is absolute.",
+        ),
+        expected_result=(
+            "The returned path is absolute (starts with '/'); notes document any "
+            "target-specific relative-path behaviour."
+        ),
+        artifacts=DEFAULT_ARTIFACTS,
+        dialog=DialogSpec(dialog_type="open_file"),
+        expectation=ExpectationSpec(
+            expected_selection_count=1,
+            options={"expect_absolute_path": True},
+        ),
+        simulation=SimulationSpec(
+            fixtures=(
+                SimulationFixtureSpec(
+                    fixture_id="relative_path_file",
+                    relative_path="relative-path-fixture.txt",
+                    role="selection",
+                    content="FileGate relative-vs-absolute fixture\n",
+                ),
+            ),
+        ),
+        family="path_naming",
+        tags=("path_naming", "open", "relative_path", "absolute_path"),
+        extensions=_extension_contract(
+            path={
+                "expected_resource_kind": "file",
+                "selection_mode": "single",
+                "path_variant": "relative_vs_absolute",
+                "expect_absolute": True,
+            },
+        ),
+    ),
+    CaseDefinition(
+        case_id="case_sensitive_collision",
+        name="Case sensitive collision",
+        automation_level="semi_automatic",
+        objective=(
+            "Verify how a target handles two fixture files that differ only in the "
+            "case of their filename, which is significant on case-sensitive Linux "
+            "filesystems but collapses to one entry on macOS HFS+ and Windows NTFS."
+        ),
+        preconditions=(
+            "Target executable is available.",
+            "Case-sensitive filesystem (standard Linux ext4/btrfs).",
+        ),
+        steps=(
+            "Materialize two fixtures that differ only by case: File.txt and file.txt.",
+            "Run the open-file scenario selecting the lowercase variant.",
+            "Verify the returned path reflects the exact case used.",
+        ),
+        expected_result=(
+            "The returned path preserves the exact case of the selected filename; "
+            "notes document any case-folding or collision behaviour."
+        ),
+        artifacts=DEFAULT_ARTIFACTS,
+        dialog=DialogSpec(dialog_type="open_file"),
+        expectation=ExpectationSpec(expected_selection_count=1),
+        simulation=SimulationSpec(
+            fixtures=(
+                SimulationFixtureSpec(
+                    fixture_id="lowercase_file",
+                    relative_path="case-collision/file.txt",
+                    role="selection",
+                    content="FileGate lowercase case-collision fixture\n",
+                ),
+                SimulationFixtureSpec(
+                    fixture_id="uppercase_file",
+                    relative_path="case-collision/File.txt",
+                    role="supporting",
+                    content="FileGate uppercase case-collision fixture\n",
+                ),
+            ),
+        ),
+        family="path_naming",
+        tags=("path_naming", "open", "case_sensitivity"),
+        extensions=_extension_contract(
+            path={
+                "expected_resource_kind": "file",
+                "selection_mode": "single",
+                "path_variant": "case_sensitive_collision",
+                "case_sensitivity_risk": "filesystem_dependent",
+            },
+        ),
+    ),
 )
 
 

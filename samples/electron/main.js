@@ -29,6 +29,13 @@ const CASE_DEFAULTS = {
   extension_auto_append_on_save: { name: "Extension auto append on save", automation_level: "semi_automatic", dialog_type: "save_file" },
   wrong_extension_selected: { name: "Wrong extension selected", automation_level: "semi_automatic", dialog_type: "save_file" },
   save_file_overwrite: { name: "Save file overwrite", automation_level: "semi_automatic", dialog_type: "save_file" },
+  path_with_spaces: { name: "Path with spaces", automation_level: "semi_automatic", dialog_type: "open_file" },
+  unicode_filename: { name: "Unicode filename", automation_level: "semi_automatic", dialog_type: "open_file" },
+  polish_characters_filename: { name: "Polish characters filename", automation_level: "semi_automatic", dialog_type: "open_file" },
+  very_long_filename: { name: "Very long filename", automation_level: "semi_automatic", dialog_type: "open_file" },
+  nested_directory_path: { name: "Nested directory path", automation_level: "semi_automatic", dialog_type: "open_file" },
+  relative_vs_absolute_path: { name: "Relative vs absolute path", automation_level: "semi_automatic", dialog_type: "open_file" },
+  case_sensitive_collision: { name: "Case sensitive collision", automation_level: "semi_automatic", dialog_type: "open_file" },
   cancel_open_dialog: { name: "Cancel open dialog", automation_level: "semi_automatic", dialog_type: "open_file", cancel_expected: true },
   cancel_save_dialog: { name: "Cancel save dialog", automation_level: "semi_automatic", dialog_type: "save_file", cancel_expected: true },
   open_dialog_multiple_times: { name: "Open dialog multiple times", automation_level: "semi_automatic", dialog_type: "open_file" },
@@ -464,6 +471,85 @@ function evaluateSaveExpectations(scenario, dialogType, selection) {
   return { notes, status: null };
 }
 
+function evaluatePathNamingExpectations(scenario, casePayload, selection) {
+  const extensions = scenario.extensions || {};
+  const pathExt = extensions.path || {};
+  const expectation = scenario.expectation || {};
+  const notes = [];
+  let overrideStatus = null;
+
+  if (selection.cancelled || !selection.values.length) {
+    return { notes, status: null };
+  }
+
+  const selectedValue = selection.values[0];
+  const pathVariant = pathExt.path_variant;
+
+  if (expectation.expect_absolute_path || pathExt.expect_absolute) {
+    const isAbsolute = path.isAbsolute(selectedValue);
+    if (isAbsolute) {
+      notes.push({ code: "PATH_IS_ABSOLUTE", message: `Returned path is absolute: '${selectedValue}'.` });
+    } else {
+      notes.push({ code: "PATH_NOT_ABSOLUTE", message: `Returned path '${selectedValue}' is not absolute.` });
+      overrideStatus = "warn";
+    }
+  }
+
+  if (pathVariant === "spaces_in_path" || expectation.expect_spaces_preserved) {
+    if (selectedValue.includes(" ")) {
+      notes.push({ code: "SPACES_PRESERVED", message: `Path spaces preserved correctly in '${selectedValue}'.` });
+    } else {
+      notes.push({ code: "SPACES_NOT_OBSERVED", message: `Returned path '${selectedValue}' does not contain spaces.` });
+      overrideStatus = "warn";
+    }
+  }
+
+  if (pathVariant === "unicode_filename" || pathVariant === "polish_diacritics") {
+    try {
+      Buffer.from(selectedValue, "utf8").toString("utf8");
+      notes.push({ code: "UNICODE_PRESERVED", message: `Unicode characters appear preserved in '${selectedValue}'.` });
+    } catch (encErr) {
+      notes.push({ code: "UNICODE_CORRUPTION", message: `Returned path contains invalid UTF-8 sequences: ${encErr}.` });
+      overrideStatus = "fail";
+    }
+  }
+
+  const minFilenameLength = expectation.min_filename_length;
+  if (minFilenameLength != null || pathVariant === "very_long_filename") {
+    const returnedBasename = path.basename(selectedValue);
+    const actualLen = returnedBasename.length;
+    const threshold = Number(minFilenameLength || 200);
+    if (actualLen >= threshold) {
+      notes.push({ code: "LONG_FILENAME_PRESERVED", message: `Filename length ${actualLen} meets minimum ${threshold}.` });
+    } else {
+      notes.push({ code: "LONG_FILENAME_TRUNCATED", message: `Filename length ${actualLen} is below expected minimum ${threshold}.` });
+      overrideStatus = "warn";
+    }
+  }
+
+  if (pathVariant === "nested_directory") {
+    const parts = selectedValue.split(path.sep).filter(Boolean);
+    const depth = parts.length - 1;
+    const nestingDepth = pathExt.nesting_depth || 4;
+    notes.push({ code: "NESTING_DEPTH_OBSERVED", message: `Returned path has ${depth} directory components; expected nesting depth: ${nestingDepth}.` });
+  }
+
+  if (pathVariant === "case_sensitive_collision") {
+    const basename = path.basename(selectedValue);
+    notes.push({ code: "CASE_COLLISION_SELECTION", message: `Selected filename under case-collision scenario: '${basename}'.` });
+  }
+
+  if (casePayload.id === "save_file_overwrite" && selection.values.length > 0) {
+    if (fs.existsSync(selectedValue)) {
+      notes.push({ code: "OVERWRITE_TARGET_EXISTS", message: `Save destination '${selectedValue}' already exists; overwrite behavior was exercised.` });
+    } else {
+      notes.push({ code: "OVERWRITE_TARGET_ABSENT", message: `Save destination '${selectedValue}' does not exist at reporting time.` });
+    }
+  }
+
+  return { notes, status: overrideStatus };
+}
+
 function classifyErrorCode(error) {
   const message = String(error.message || error).toLowerCase();
   if (message.includes("display") || message.includes("window")) {
@@ -553,6 +639,8 @@ function buildResultPayload(scenario, casePayload, dialogType, selection, durati
   notes.push(...filterEvaluation.notes);
   const saveEvaluation = evaluateSaveExpectations(scenario, dialogType, selection);
   notes.push(...saveEvaluation.notes);
+  const pathEvaluation = evaluatePathNamingExpectations(scenario, casePayload, selection);
+  notes.push(...pathEvaluation.notes);
 
   if (!scenario.simulation?.enabled) {
     notes.push({
@@ -575,12 +663,13 @@ function buildResultPayload(scenario, casePayload, dialogType, selection, durati
     });
   }
 
-  const status = cancelExpected || selectionCountIssues.length > 0
+  const baseStatus = cancelExpected || selectionCountIssues.length > 0
     ? "fail"
-    : (filterEvaluation.status === "warn" || saveEvaluation.status === "warn" ? "warn" : "pass");
+    : (filterEvaluation.status === "warn" || saveEvaluation.status === "warn" || pathEvaluation.status === "warn" ? "warn"
+      : pathEvaluation.status === "fail" ? "fail" : "pass");
   const access = computeAccessFlags(dialogType, selection.values);
   return {
-    status,
+    status: baseStatus,
     duration_ms: durationMs,
     returned_resource_type: selection.returned_resource_type,
     returned_value_example: dialogType === "open_files" ? selection.values : selection.values[0],
