@@ -86,6 +86,41 @@ CASE_DEFAULTS: dict[str, dict[str, Any]] = {
         "automation_level": "semi_automatic",
         "dialog_type": "save_file",
     },
+    "path_with_spaces": {
+        "name": "Path with spaces",
+        "automation_level": "semi_automatic",
+        "dialog_type": "open_file",
+    },
+    "unicode_filename": {
+        "name": "Unicode filename",
+        "automation_level": "semi_automatic",
+        "dialog_type": "open_file",
+    },
+    "polish_characters_filename": {
+        "name": "Polish characters filename",
+        "automation_level": "semi_automatic",
+        "dialog_type": "open_file",
+    },
+    "very_long_filename": {
+        "name": "Very long filename",
+        "automation_level": "semi_automatic",
+        "dialog_type": "open_file",
+    },
+    "nested_directory_path": {
+        "name": "Nested directory path",
+        "automation_level": "semi_automatic",
+        "dialog_type": "open_file",
+    },
+    "relative_vs_absolute_path": {
+        "name": "Relative vs absolute path",
+        "automation_level": "semi_automatic",
+        "dialog_type": "open_file",
+    },
+    "case_sensitive_collision": {
+        "name": "Case sensitive collision",
+        "automation_level": "semi_automatic",
+        "dialog_type": "open_file",
+    },
     "cancel_open_dialog": {
         "name": "Cancel open dialog",
         "automation_level": "semi_automatic",
@@ -598,6 +633,77 @@ def evaluate_save_expectations(
     return notes, None
 
 
+def evaluate_path_naming_expectations(
+    scenario: dict[str, Any],
+    case_payload: dict[str, Any],
+    selection: SelectionResult,
+) -> tuple[list[dict[str, str]], str | None]:
+    """Evaluate path/naming contract expectations and emit structured notes."""
+    extensions = scenario.get("extensions", {})
+    path_ext = extensions.get("path", {})
+    expectation = scenario.get("expectation", {})
+    notes: list[dict[str, str]] = []
+    override_status: str | None = None
+
+    if selection.cancelled or not selection.values:
+        return notes, None
+
+    selected_value = selection.values[0]
+    path_variant = path_ext.get("path_variant")
+
+    if expectation.get("expect_absolute_path") or path_ext.get("expect_absolute"):
+        is_absolute = os.path.isabs(selected_value)
+        if is_absolute:
+            notes.append({"code": "PATH_IS_ABSOLUTE", "message": f"Returned path is absolute: '{selected_value}'."})
+        else:
+            notes.append({"code": "PATH_NOT_ABSOLUTE", "message": f"Returned path '{selected_value}' is not absolute."})
+            override_status = "warn"
+
+    if path_variant == "spaces_in_path" or expectation.get("expect_spaces_preserved"):
+        if " " in selected_value:
+            notes.append({"code": "SPACES_PRESERVED", "message": f"Path spaces preserved correctly in '{selected_value}'."})
+        else:
+            notes.append({"code": "SPACES_NOT_OBSERVED", "message": f"Returned path '{selected_value}' does not contain spaces."})
+            override_status = "warn"
+
+    if path_variant in ("unicode_filename", "polish_diacritics"):
+        try:
+            selected_value.encode("utf-8").decode("utf-8")
+            notes.append({"code": "UNICODE_PRESERVED", "message": f"Unicode characters appear preserved in '{selected_value}'."})
+        except (UnicodeEncodeError, UnicodeDecodeError) as enc_err:
+            notes.append({"code": "UNICODE_CORRUPTION", "message": f"Returned path contains invalid UTF-8 sequences: {enc_err}."})
+            override_status = "fail"
+
+    min_filename_length = expectation.get("min_filename_length")
+    if min_filename_length is not None or path_variant == "very_long_filename":
+        returned_stem = os.path.basename(selected_value)
+        actual_len = len(returned_stem)
+        threshold = int(min_filename_length or 200)
+        if actual_len >= threshold:
+            notes.append({"code": "LONG_FILENAME_PRESERVED", "message": f"Filename length {actual_len} meets minimum {threshold}."})
+        else:
+            notes.append({"code": "LONG_FILENAME_TRUNCATED", "message": f"Filename length {actual_len} is below expected minimum {threshold}."})
+            override_status = "warn"
+
+    if path_variant == "nested_directory":
+        depth = len(Path(selected_value).parts) - 1
+        nesting_depth = path_ext.get("nesting_depth", 4)
+        notes.append({"code": "NESTING_DEPTH_OBSERVED", "message": f"Returned path has {depth} directory components; expected nesting depth: {nesting_depth}."})
+
+    if path_variant == "case_sensitive_collision":
+        basename = os.path.basename(selected_value)
+        notes.append({"code": "CASE_COLLISION_SELECTION", "message": f"Selected filename under case-collision scenario: '{basename}'."})
+
+    if case_payload.get("id") == "save_file_overwrite" and selection.values:
+        target = Path(selection.values[0])
+        if target.exists():
+            notes.append({"code": "OVERWRITE_TARGET_EXISTS", "message": f"Save destination '{target}' already exists; overwrite behavior was exercised."})
+        else:
+            notes.append({"code": "OVERWRITE_TARGET_ABSENT", "message": f"Save destination '{target}' does not exist at reporting time."})
+
+    return notes, override_status
+
+
 def build_result_payload(
     scenario: dict[str, Any],
     case_payload: dict[str, Any],
@@ -701,6 +807,8 @@ def build_result_payload(
     notes.extend(filter_notes)
     save_notes, save_status = evaluate_save_expectations(scenario, dialog_type, selection)
     notes.extend(save_notes)
+    path_notes, path_status = evaluate_path_naming_expectations(scenario, case_payload, selection)
+    notes.extend(path_notes)
 
     if not scenario.get("simulation", {}).get("enabled") and (
         case_payload["id"].startswith("filter_") or case_payload["id"] in {"extension_auto_append_on_save", "wrong_extension_selected"}
@@ -725,8 +833,10 @@ def build_result_payload(
         status = "fail"
     elif selection_count_issues:
         status = "fail"
-    elif filter_status == "warn" or save_status == "warn":
+    elif filter_status == "warn" or save_status == "warn" or path_status == "warn":
         status = "warn"
+    elif path_status == "fail":
+        status = "fail"
     else:
         status = "pass"
 
